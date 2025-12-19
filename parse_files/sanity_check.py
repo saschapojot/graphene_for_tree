@@ -10,7 +10,7 @@ import numpy as np
 # This script validates the parsed configuration data from .conf files
 # It checks for:
 # - Valid matrix properties (determinant, condition number)
-# - Correct atom position counts
+# - Valid Wyckoff position type references
 # - Duplicate atomic positions after lattice reduction
 
 # Exit codes for different error conditions
@@ -18,7 +18,7 @@ jsonErr = 4                      # JSON parsing error
 valErr = 5                       # Value validation error
 matrix_not_exist_error = 6       # Required matrix field missing
 matrix_cond_error = 7            # Matrix condition number or determinant error
-atom_position_error = 8          # Atom position count mismatch
+atom_position_error = 8          # Atom position reference error
 duplicate_position_error = 9     # Duplicate atomic positions found
 
 
@@ -114,56 +114,45 @@ if not is_valid:
 
 
 # ==============================================================================
-# STEP 5: Define atom position count validation function
+# STEP 5: Define Wyckoff position validation function
 # ==============================================================================
-def check_atom_positions(parsed_config):
+def check_Wyckoff_positions(parsed_config):
     """
-    Check that the number of atom positions matches the number of atoms for each type
+    Check that every Wyckoff position refers to a valid Wyckoff position type.
 
     Verifies that:
-    - Each atom type has the expected number of positions defined
-    - No positions exist for undefined atom types
+    - Wyckoff_position_types exists.
+    - Wyckoff_positions exists.
+    - Every position in Wyckoff_positions has an 'atom_type' that exists as a key
+      in Wyckoff_position_types.
 
     :param parsed_config: Parsed configuration dictionary
     :return: tuple: (is_valid, error_message)
     """
-    # Extract atom type definitions and position data
-    atom_types = parsed_config.get('atom_types', {})
-    atom_positions = parsed_config.get('atom_positions', [])
+    # Extract definitions and position data using new keys
+    # 'atom_types' is replaced by 'Wyckoff_position_types'
+    wyckoff_types = parsed_config.get('Wyckoff_position_types', {})
+    wyckoff_positions = parsed_config.get('Wyckoff_positions', [])
 
     # Basic validation
-    if not atom_types:
-        return False, "No atom types defined"
+    if not wyckoff_types:
+        return False, "No Wyckoff_position_types defined"
 
-    if not atom_positions:
-        return False, "No atom positions defined"
+    if not wyckoff_positions:
+        return False, "No Wyckoff_positions defined"
 
-    # Count how many positions are defined for each atom type
-    position_counts = {}
-    for position in atom_positions:
-        atom_type = position.get('atom_type')
-        if atom_type:
-            position_counts[atom_type] = position_counts.get(atom_type, 0) + 1
+    # Verify referential integrity
+    for i, position in enumerate(wyckoff_positions):
+        # Get the type reference from the position
+        p_type = position.get('atom_type')
+        p_name = position.get('position_name', f'Index {i}')
 
-    # Verify each atom type has the correct number of positions
-    for atom_type, atom_data in atom_types.items():
-        # Extract expected count from the atom data dictionary
-        if isinstance(atom_data, dict):
-            expected_count = atom_data.get('count', 0)
-        else:
-            # Fallback for simple integer format (if applicable)
-            expected_count = atom_data
+        if not p_type:
+            return False, f"Position '{p_name}' is missing the 'atom_type' field"
 
-        actual_count = position_counts.get(atom_type, 0)
-
-        # Check if counts match
-        if actual_count != expected_count:
-            return False, f"Atom type '{atom_type}': expected {expected_count} positions, found {actual_count}"
-
-    # Check for positions of undefined atom types
-    for atom_type in position_counts:
-        if atom_type not in atom_types:
-            return False, f"Found positions for undefined atom type '{atom_type}'"
+        # Check if this type is defined in the types dictionary
+        if p_type not in wyckoff_types:
+            return False, f"Position '{p_name}' refers to undefined Wyckoff type '{p_type}'"
 
     return True, None
 
@@ -184,12 +173,12 @@ def check_duplicate_positions(parsed_config, tolerance=1e-6):
     """
     # Extract lattice basis and atom positions
     lattice_basis = parsed_config.get('lattice_basis')
-    atom_positions = parsed_config.get('atom_positions', [])
+    wyckoff_positions = parsed_config.get('Wyckoff_positions', [])
 
     # Basic validation
     if not lattice_basis:
         return False, "Lattice basis not found"
-    if not atom_positions:
+    if not wyckoff_positions:
         return True, None  # No positions to check
 
     try:
@@ -201,9 +190,8 @@ def check_duplicate_positions(parsed_config, tolerance=1e-6):
         position_info = []  # For error reporting
 
         # Process each atom position
-        for i, position in enumerate(atom_positions):
+        for i, position in enumerate(wyckoff_positions):
             # Determine display name for error messages
-            # Priority: position_name > atom_type > generic name
             position_name = position.get('position_name')
             atom_type = position.get('atom_type')
 
@@ -263,9 +251,9 @@ def check_duplicate_positions(parsed_config, tolerance=1e-6):
 
 
 # ==============================================================================
-# STEP 7: Validate atom positions match atom counts
+# STEP 7: Validate wyckoff positions match definitions
 # ==============================================================================
-is_valid, error_msg = check_atom_positions(parsed_config)
+is_valid, error_msg = check_Wyckoff_positions(parsed_config)
 if not is_valid:
     print(f"Error: {error_msg}", file=sys.stderr)
     exit(atom_position_error)

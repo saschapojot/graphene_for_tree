@@ -42,9 +42,10 @@ key_value_pattern = r'^([^=\s]+)\s*=\s*([^=]+)\s*$'
 # Pattern for floating point numbers (including scientific notation)
 float_pattern = r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?"
 
-# Pattern for atom type definitions: AtomSymbol = count ; orbital1, orbital2, ...
-# Example: O=3;2px,2py,2pz
-atom_orbital_pattern = r'^([A-Za-z]+\d*)\s*=\s*(\d+)\s*;\s*([1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fx3-3xy2|f3x2y-y3|fxz2|fyz2|fx2-y2z|fz3)(?:\s*,\s*[1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fx3-3xy2|f3x2y-y3|fxz2|fyz2|fx2-y2z|fz3))*)\s*$'
+# Pattern for atom type definitions: AtomSymbol = orbital1, orbital2, ...
+# Example: O=2px,2py,2pz
+# Modified to remove the count and semicolon requirement
+atom_orbital_pattern = r'^([A-Za-z]+\d*)\s*=\s*([1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fx3-3xy2|f3x2y-y3|fxz2|fyz2|fx2-y2z|fz3)(?:\s*,\s*[1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fx3-3xy2|f3x2y-y3|fxz2|fyz2|fx2-y2z|fz3))*)\s*$'
 
 # Pattern for system name
 name_pattern = r'^name\s*=\s*([a-zA-Z0-9_-]+)\s*$'
@@ -55,8 +56,8 @@ dim_pattern = r"^dim\s*=\s*(\d+)\s*$"
 # Pattern for number of neighbor cells to consider
 neighbors_pattern = r"^neighbors\s*=\s*(\d+)\s*$"
 
-# Pattern for number of atom types
-atom_type_num_pattern = r"^atom_type_num\s*=\s*(\d+)\s*$"
+# Pattern for number of Wyckoff position types
+Wyckoff_type_num_pattern = r"^Wyckoff_type_num\s*=\s*(\d+)\s*$"
 
 # Pattern for atom position coefficients (fractional coordinates)
 # Example: O1_position_coefs = 0.5, 0.5, 0.0
@@ -121,7 +122,7 @@ def parseConfContents(file):
     - System parameters (name, dimensions, spin, neighbors)
     - Lattice information (basis vectors, type)
     - Space group information (number, origin, basis)
-    - Atom types and their orbitals
+    - Atom type on each Wyckoff position and their orbitals
     - Atom positions in fractional coordinates
 
     :param file: conf file path
@@ -136,14 +137,14 @@ def parseConfContents(file):
         'dim': '',                     # Dimensionality (2 or 3)
         'spin': '',                    # Spin consideration (true/false)
         'neighbors': '',               # Number of neighbor cells to consider
-        'atom_type_num': '',          # Total number of atom types
+        'Wyckoff_type_num': '',          # Total number of Wyckoff position types
         'lattice_type': '',           # Lattice type (primitive/conventional)
         'lattice_basis': '',          # Lattice basis vectors (3x3 matrix)
         'space_group': '',            # Space group number
         'space_group_origin': '',     # Space group origin (fractional coords)
         'space_group_basis': '',      # Space group basis vectors
-        'atom_types': {},             # Dictionary: atom_type -> {count, orbitals}
-        'atom_positions': []          # List of atom positions with types
+        'Wyckoff_position_types': {}, # Dictionary: Wyckoff_position_types -> {orbitals}
+        'Wyckoff_positions': []          # List of atom positions with types
     }
 
     # Parse each line
@@ -185,11 +186,11 @@ def parseConfContents(file):
                 continue
 
             # ==========================================
-            # Parse number of atom types
+            # Parse number of Wyckoff types
             # ==========================================
-            match_atom_type_num = re.match(atom_type_num_pattern, oneLine)
-            if match_atom_type_num:
-                config['atom_type_num'] = int(match_atom_type_num.group(1))
+            match_wyckoff_num = re.match(Wyckoff_type_num_pattern, oneLine)
+            if match_wyckoff_num:
+                config['Wyckoff_type_num'] = int(match_wyckoff_num.group(1))
                 continue
 
             # ==========================================
@@ -252,19 +253,20 @@ def parseConfContents(file):
                 continue
 
             # ==========================================
-            # Parse atom type definitions
-            # Format: AtomSymbol = count ; orbital1, orbital2, ...
-            # Example: B = 1 ; 2pz, 2s
+            # Parse atom type (Wyckoff position) definitions
+            # Format: AtomSymbol = orbital1, orbital2, ...
+            # Example: B = 2pz, 2s
             # ==========================================
             atom_match = re.match(atom_orbital_pattern, oneLine)
             if atom_match:
                 atom_type = atom_match.group(1)      # Atom symbol (B, N, O, etc.)
-                atom_count = int(atom_match.group(2)) # Number of this atom type
-                orbitals = [o.strip() for o in atom_match.group(3).split(',')]  # List of orbitals
+
+                # Group 2 is now the orbital string (count was removed from regex)
+                orbitals = [o.strip() for o in atom_match.group(2).split(',')]
 
                 # Store atom type information
-                config['atom_types'][atom_type] = {
-                    'count': atom_count,
+                config['Wyckoff_position_types'][atom_type] = {
+
                     'orbitals': orbitals
                 }
                 continue
@@ -291,7 +293,7 @@ def parseConfContents(file):
                     'atom_type': base_atom_type,                       # Base type (O, B, etc.)
                     'fractional_coordinates': [x_coord, y_coord, z_coord]  # Fractional coords
                 }
-                config['atom_positions'].append(position_info)
+                config['Wyckoff_positions'].append(position_info)
                 continue
 
             # If no pattern matched, log unrecognized line
