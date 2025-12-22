@@ -162,7 +162,7 @@ def parseConfContents(file):
                 continue
 
             # ==========================================
-            # Parse dimensionality (2D or 3D)
+            # Parse dimensionality (1D, 2D or 3D)
             # ==========================================
             dim_match = re.match(dim_pattern, oneLine)
             if dim_match:
