@@ -162,7 +162,7 @@ def build_orbital_vectors(parsed_config):
 
         # Get orbitals for this atom type from configuration
         # Using Wyckoff_position_types instead of atom_types
-        orbitals = parsed_config['Wyckoff_position_types'][atom_type]['orbitals']
+        orbitals = parsed_config['Wyckoff_position_types'][position_name]['orbitals']
 
         # Create 78-dimensional binary orbital vector (all zeros initially)
         orbital_vector = np.zeros(78)

@@ -85,7 +85,7 @@ try:
         p_name = pos.get('position_name', 'Unknown')
         a_type = pos.get('atom_type', 'Unknown')
         coords = pos.get('fractional_coordinates', [])
-        print(f"  {p_name} (Type: {a_type}):")
+        print(f"  {p_name} (atom name: {a_type}):")
         print(f"    Fractional Coords: [{', '.join(map(str, coords))}]")
 
 
@@ -222,7 +222,7 @@ else:
         print("Available keys:", list(
             space_group_representations.keys()) if 'space_group_representations' in locals() else "Could not parse JSON")
         exit(1)
-
+lattice_basis = np.array(parsed_config['lattice_basis'])
 
 # ==============================================================================
 # STEP 5: Define orbital mapping for 78-dimensional orbital space
@@ -317,6 +317,7 @@ try:
     print("ORBITALS ADDED BY SYMMETRY:")
     print("-" * 40)
     added_orbitals = orbital_completion_data["added_orbitals"]
+
     if any(added_orbitals.values()):
         for atom_name, orbitals in added_orbitals.items():
             if orbitals:
@@ -330,6 +331,7 @@ try:
     print("-" * 40)
 
     updated_vectors = orbital_completion_data["updated_orbital_vectors"]
+
     orbital_map_reverse = {v: k for k, v in orbital_map.items()}  # Reverse lookup
     for atom_name, vector in updated_vectors.items():
         # Find indices where orbital is active (value = 1)
@@ -349,17 +351,22 @@ try:
                 f"  {atom_name}: {repr_array.shape[0]} operations, {repr_array.shape[1]}×{repr_array.shape[2]} matrices")
     # Update parsed_config with completed orbitals
     for atom_pos in parsed_config['Wyckoff_positions']:
-        atom_name = atom_pos['position_name']
+        position_name = atom_pos['position_name']
+        # print(f"position_name={position_name}")
         atom_type = atom_pos['atom_type']
         # Get the updated orbital vector for this atom
-        if atom_name in updated_vectors:
-            vector = updated_vectors[atom_name]
+        # print(f"updated_vectors={updated_vectors}")
+        # print(f"position_name={position_name}")
+
+        if position_name in updated_vectors:
+            vector = updated_vectors[position_name]
             active_indices = [i for i, val in enumerate(vector) if val == 1]
-            active_orbital_names = [orbital_map_reverse.get(idx, f"unknown_{idx}") for idx in active_indices]
-            # Update Wyckoff_positions with completed orbital list
-            if 'Wyckoff_position_types' in parsed_config and atom_type in parsed_config['Wyckoff_position_types']:
-                parsed_config['Wyckoff_position_types'][atom_type]['orbitals'] = active_orbital_names
-                parsed_config['Wyckoff_position_types'][atom_type]['orbitals_completed'] = True
+            # print(f"active_indices={active_indices}")
+            active_orbital_names = [orbital_map_reverse.get(idx) for idx in active_indices]
+            # print(f"active_orbital_names={active_orbital_names}")
+            parsed_config['Wyckoff_position_types'][position_name]['orbitals'] = active_orbital_names
+            parsed_config['Wyckoff_position_types'][position_name]['orbitals_completed'] = True
+
     # Store completion results for later use
     orbital_completion_results = {
         "status": "completed",
@@ -464,14 +471,14 @@ def frac_to_cartesian(cell, frac_coord, basis,origin_cart):
 
 
 class atomIndex:
-    def __init__(self, cell, frac_coord, atom_name, basis,origin_cart, parsed_config,
+    def __init__(self, cell, frac_coord,position_name, basis,origin_cart, parsed_config,
                  repr_s_np, repr_p_np, repr_d_np, repr_f_np):
         """
         Initialize an atom with position, orbital, and representation information
         Args:
             cell: [n0, n1, n2] unit cell indices
             frac_coord: [f0, f1, f2] fractional coordinates
-            atom_name: atom type name (e.g., 'C', 'B', 'N')
+            position_name: specific atom identifier for Wyckoff positions (e.g., 'C0', 'C1')
             basis: lattice basis vectors [a0, a1, a2], stored as row vectors
             origin_cart: Cartesian origin offset (e.g., Bilbao origin)
             parsed_config: configuration dict containing orbital information
@@ -481,7 +488,8 @@ class atomIndex:
         self.n0 = deepcopy(cell[0])
         self.n1 = deepcopy(cell[1])
         self.n2 = deepcopy(cell[2])
-        self.atom_name = atom_name  # string is immutable
+        self.position_name = position_name  # Specific identifier for Wyckoff position (e.g., 'C0')
+
         self.frac_coord = deepcopy(frac_coord)
         self.basis = deepcopy(basis)
         self.origin_cart = deepcopy(origin_cart)  # ← Store origin!
@@ -493,23 +501,27 @@ class atomIndex:
         # Cartesian coordinates using Bilbao's origin
         self.cart_coord = frac_to_cartesian(cell, frac_coord, basis,origin_cart)
 
-        # Store orbital information if config is provided
+        # parse Configuration to find orbitals
         found_atom = False
-        # 1. Find the atom_type corresponding to this atom_name (position_name)
-        for pos in parsed_config['Wyckoff_positions']:
-            if pos['position_name'] == atom_name:
-                atom_type = pos['atom_type']
-                # 2. Retrieve orbitals from Wyckoff_position_types using the atom_type
-                if 'Wyckoff_position_types' in parsed_config and atom_type in parsed_config['Wyckoff_position_types']:
-                    self.orbitals = deepcopy(parsed_config['Wyckoff_position_types'][atom_type]['orbitals'])
-                    self.num_orbitals = len(self.orbitals)
-                    found_atom = True
+        self.orbitals = []
+        self.atom_type = None  # To be determined from config
+
+        wyckoff_positions = parsed_config['Wyckoff_positions']
+        wyckoff_types = parsed_config['Wyckoff_position_types']
+
+        # Lookup by position_name (e.g., 'C0')
+        for pos in wyckoff_positions:
+            if pos.get('position_name') == position_name:
+                # Retrieve the atom type defined in the config (e.g., 'C')
+                self.atom_type = pos.get('atom_type')
+                # Directly access the orbital definition
+                self.orbitals = deepcopy(wyckoff_types[self.position_name]['orbitals'])
+                found_atom = True
                 break
         if not found_atom:
-            raise ValueError(
-                f"Atom '{atom_name}' not found in parsed_config or orbitals missing in Wyckoff_position_types")
+            raise ValueError(f"Configuration not found for position '{position_name}'")
 
-
+        self.num_orbitals = len(self.orbitals)
         # Deep copy representation matrices (all required now)
         self.repr_s_np = deepcopy(repr_s_np)
         self.repr_p_np = deepcopy(repr_p_np)
@@ -547,7 +559,7 @@ class atomIndex:
             numpy array: representation matrix for this atom's orbitals
         """
         if self.orbital_representations is None:
-            raise ValueError(f"Orbital representations not computed for atom {self.atom_name}")
+            raise ValueError(f"Orbital representations not computed for atom {self.atom_type}")
 
         if operation_idx >= len(self.orbital_representations):
             raise IndexError(f"Operation index {operation_idx} out of range")
@@ -568,20 +580,25 @@ class atomIndex:
 
     def __str__(self):
         """String representation for print()"""
-        orbital_info = f", Orbitals: {self.num_orbitals}"
+        orbitals_str = ', '.join(self.orbitals) if self.orbitals else "None"
         repr_info = f", Repr: ✓" if self.orbital_representations is not None else ""
-        return (f"Atom: {self.atom_name}, "
+        return (f"Atom: {self.atom_type}, "
+                f"position_name='{self.position_name}', "
                 f"Cell: [{self.n0}, {self.n1}, {self.n2}], "
                 f"Frac: {self.frac_coord}, "
-                f"Cart: {self.cart_coord}"
-                f"{orbital_info}{repr_info}")
+                f"Cart: {self.cart_coord}, "
+                f"Orbitals: [{orbitals_str}]"
+                f"{repr_info}"
+                )
 
     def __repr__(self):
         """Detailed representation for debugging"""
+        orbitals_str = ', '.join(self.orbitals) if self.orbitals else "None"
         return (f"atomIndex(cell=[{self.n0}, {self.n1}, {self.n2}], "
                 f"frac_coord={self.frac_coord}, "
-                f"atom_name='{self.atom_name}', "
-                f"orbitals={self.num_orbitals})")
+                f"atom_type='{self.atom_type}', "
+                f"position_name='{self.position_name}', "
+                f"orbitals=[{orbitals_str}])")
 
     def get_orbital_names(self):
         """Get list of orbital names for this atom"""
@@ -604,7 +621,7 @@ def compute_dist(center_atom, unit_cell_atoms, search_range=10, radius=None, sea
         unit_cell_atoms: list of atomIndex objects in the reference unit cell [0,0,0]
         search_range: how many cells to search in each direction (default: 1)
         radius: cutoff distance in Cartesian coordinates (default: None means all atoms)
-        search_dim: dimension to search (1, 2, or 3) (default: 3)
+        search_dim: dimension to search (1, 2, or 3) (default: 2)
             - 1: search along n0 only
             - 2: search along n0 and n1
             - 3: search along n0, n1, and n2
@@ -651,20 +668,20 @@ def compute_dist(center_atom, unit_cell_atoms, search_range=10, radius=None, sea
                         neighbor_atom = atomIndex(
                             cell=deepcopy(cell),
                             frac_coord=deepcopy(unit_atom.frac_coord),
-                            atom_name=unit_atom.atom_name,  # string is immutable, safe
+                            position_name=unit_atom.position_name,
                             basis=deepcopy(lattice_basis),
-                            origin_cart=deepcopy(origin_cart),  # ← Pass origin!
+                            origin_cart=deepcopy(origin_cart),
                             parsed_config=deepcopy(unit_atom.parsed_config),
-                            repr_s_np=deepcopy(unit_atom.repr_s_np) if unit_atom.repr_s_np is not None else None,
-                            repr_p_np=deepcopy(unit_atom.repr_p_np) if unit_atom.repr_p_np is not None else None,
-                            repr_d_np=deepcopy(unit_atom.repr_d_np) if unit_atom.repr_d_np is not None else None,
-                            repr_f_np=deepcopy(unit_atom.repr_f_np) if unit_atom.repr_f_np is not None else None
+                            repr_s_np=deepcopy(unit_atom.repr_s_np),
+                            repr_p_np=deepcopy(unit_atom.repr_p_np),
+                            repr_d_np=deepcopy(unit_atom.repr_d_np),
+                            repr_f_np=deepcopy(unit_atom.repr_f_np)
                         )
 
                         # Deep copy orbital information from unit cell atom
-                        neighbor_atom.orbitals = deepcopy(unit_atom.orbitals)
-                        neighbor_atom.num_orbitals = unit_atom.num_orbitals
-                        neighbor_atom.orbital_representations = deepcopy(unit_atom.orbital_representations)
+                        # neighbor_atom.orbitals = deepcopy(unit_atom.orbitals)
+                        # neighbor_atom.num_orbitals = unit_atom.num_orbitals
+                        # neighbor_atom.orbital_representations = deepcopy(unit_atom.orbital_representations)
 
                         neighbor_atoms.append((dist, neighbor_atom))
 
@@ -1152,7 +1169,7 @@ def check_center_invariant(center_atom, operation_idx, space_group_bilbao_cart,
 # ==============================================================================
 # STEP 7: Find neighboring atoms and partition into equivalence classes
 # ==============================================================================
-print(parsed_config)
+
 def generate_wyckoff_orbit(wyckoff_position, space_group_bilbao_cart, lattice_basis,
                           tolerance=1e-5, verbose=False):
     """
@@ -1195,13 +1212,8 @@ def generate_wyckoff_orbit(wyckoff_position, space_group_bilbao_cart, lattice_ba
     lattice_basis = np.array(lattice_basis)#rows are basis vectors
     lattice_matrix = np.column_stack(lattice_basis)  # Columns are basis vectors
     lattice_matrix_inv = np.linalg.inv(lattice_matrix)
-
     # Convert input fractional coordinates to Cartesian using Bilbao origin
     r_cart_input = frac_to_cartesian([0, 0, 0], r_frac_input, lattice_basis, origin_cart)
-    if verbose:
-        print(f"\nGenerating orbit for {position_name} (type: {atom_type})")
-        print(f"Input fractional coords: {r_frac_input}")
-        print(f"Input Cartesian coords: {r_cart_input}")
 
     # Store unique positions
     unique_positions = []
@@ -1236,3 +1248,120 @@ def generate_wyckoff_orbit(wyckoff_position, space_group_bilbao_cart, lattice_ba
             # Convert wrapped fractional back to Cartesian for output
             r_cart_final = frac_to_cartesian([0, 0, 0], r_frac_wrapped, lattice_basis, origin_cart)
 
+            # Create position dictionary
+            position_dict = {
+                'fractional_coordinates': r_frac_wrapped.tolist(),
+                'cartesian_coordinates': r_cart_final.tolist(),
+                'operation_idx': op_idx,
+                'position_name': position_name,
+                'atom_type': atom_type
+            }
+            unique_positions.append(position_dict)
+
+    return unique_positions
+
+
+
+
+
+def generate_atoms_in_unit_cell(parsed_config,space_group_bilbao_cart, lattice_basis,origin_cart,repr_s, repr_p, repr_d, repr_f,
+                          tolerance=1e-5):
+    """
+    Generates all atoms in the unit cell by expanding the Wyckoff positions defined
+    in the configuration using the provided space group operations.
+    Args:
+        parsed_config: Dictionary containing configuration (Wyckoff positions, origin, etc.)
+        space_group_bilbao_cart:  List of space group matrices in Cartesian coordinates
+        lattice_basis:  3x3 array of lattice basis vectors (each row is a basis vector)
+        repr_s, repr_p, repr_d, repr_f: Orbital representation matrices (numpy arrays)
+        tolerance:  Numerical tolerance for coordinate comparisons
+
+    Returns:
+        list: A list of atomIndex objects representing all atoms in the unit cell [0,0,0]
+    """
+
+    unit_cell_atoms = []
+    # Iterate over all Wyckoff positions defined in the configuration
+    for wyckoff_pos in parsed_config['Wyckoff_positions']:
+        # Generate the full orbit (all equivalent atoms in unit cell)\
+        # This function applies space group operations to the Wyckoff generator
+        orbit = generate_wyckoff_orbit(
+            wyckoff_pos,
+            space_group_bilbao_cart,
+            lattice_basis,
+            tolerance=tolerance
+        )
+        # Create atomIndex objects for each position in the orbit
+        for pos_data in orbit:
+            atom = atomIndex(
+                cell=[0, 0, 0],  # Always the home unit cell
+                frac_coord=pos_data['fractional_coordinates'],
+                position_name=pos_data['position_name'],
+                basis=lattice_basis,
+                origin_cart=origin_cart,
+                parsed_config=parsed_config,
+                repr_s_np=repr_s,
+                repr_p_np=repr_p,
+                repr_d_np=repr_d,
+                repr_f_np=repr_f
+            )
+            unit_cell_atoms.append(atom)
+
+    return unit_cell_atoms
+
+
+unit_cell_atoms=generate_atoms_in_unit_cell(parsed_config, space_group_bilbao_cart, lattice_basis,origin_cart, repr_s, repr_p, repr_d, repr_f)
+
+# ==============================================================================
+# Define neighbor search parameters
+# ==============================================================================
+search_range=10 # Number of unit cells to search in each direction
+               # Total search region: [-10, 10] × [-10, 10] for this 2d problem
+               # Larger values find more distant neighbors but increase computation time
+
+radius=1.05 * np.sqrt(3) # Cutoff distance in Cartesian coordinates
+                         # Only atoms within this distance from center are considered neighbors
+                         # Factor 1.05 provides small tolerance beyond sqrt(3) for numerical safety
+                         # FIXME: search_range must be sufficiently large to include all atoms within radius
+                         # TODO: may need an algorithm to deal with this in the next version of code
+
+
+search_dim = 2  # Dimensionality of neighbor search
+                # 1: Search along n0 only (1D chain)
+                # 2: Search along n0 and n1 (2D layer) - appropriate for 2D materials like hBN
+                # 3: Search along n0, n1, and n2 (3D bulk)
+
+
+# ==============================================================================
+# Find all neighbors for each atom in the unit cell
+# ==============================================================================
+# For each atom in the reference unit cell [0,0,0], find all neighboring atoms within
+# the specified radius by searching through neighboring unit cells.
+# This creates the hopping connectivity network for tight-binding calculations.
+
+
+all_neighbors = {}  # Dictionary mapping unit cell atom index → list of neighbor atomIndex objects
+                    # Key: integer index of center atom in unit_cell_atoms\
+                    # Value: list of atomIndex objects representing all neighbors within radius
+                    # Neighbors can be in different unit cells (n0, n1, n2)
+
+print(unit_cell_atoms)
+for i, unit_atom in enumerate(unit_cell_atoms):
+    # Find all neighbors within the specified radius for this center atom
+    # The compute_dist function:
+    # 1. Searches through neighboring unit cells within search_range
+    # 2. Constructs atomIndex objects for atoms in those cells
+    # 3. Filters by distance (keeps only atoms within radius)
+    # 4. Returns sorted list by distance
+    neighbors = compute_dist(
+        center_atom=unit_atom,  # Center atom (in unit cell [0,0,0])
+        unit_cell_atoms=unit_cell_atoms,  # Template atoms to replicate in neighboring cells
+        search_range=search_range,  # How many cells to search in each direction
+        radius=radius,  # Distance cutoff in Cartesian coordinates
+        search_dim=search_dim  # Search dimensionality (here  is 2D)
+    )
+    # Store the neighbor list using the unit cell atom index as key
+    # This creates a complete connectivity map: center_atom_idx --- [neighbor1, neighbor2, ...]
+    all_neighbors[i] = neighbors
+    # Print summary for each center atom
+    print(f"Unit cell atom {i} ({unit_atom.atom_type}): found {len(neighbors)} neighbors within radius {radius}")

@@ -143,16 +143,16 @@ def check_Wyckoff_positions(parsed_config):
 
     # Verify referential integrity
     for i, position in enumerate(wyckoff_positions):
-        # Get the type reference from the position
-        p_type = position.get('atom_type')
-        p_name = position.get('position_name', f'Index {i}')
+        # Get the references from the position
+        p_name = position.get('position_name')
 
-        if not p_type:
-            return False, f"Position '{p_name}' is missing the 'atom_type' field"
+        # Ensure position_name exists
+        if not p_name:
+            return False, f"Position at index {i} is missing the 'position_name' field"
 
-        # Check if this type is defined in the types dictionary
-        if p_type not in wyckoff_types:
-            return False, f"Position '{p_name}' refers to undefined Wyckoff type '{p_type}'"
+        # Check if the position_name (e.g., 'C0') is defined in the types dictionary
+        if p_name not in wyckoff_types:
+            return False, f"Position '{p_name}' is not defined in Wyckoff_position_types"
 
     return True, None
 
