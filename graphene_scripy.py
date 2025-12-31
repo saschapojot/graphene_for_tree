@@ -490,6 +490,13 @@ class atomIndex:
         self.n2 = deepcopy(cell[2])
         self.position_name = position_name  # Specific identifier for Wyckoff position (e.g., 'C0')
 
+        #example: C00,C01,
+        #format: [Species][Wyckoff][Index]
+        # the first 0 refers to a unique Wyckoff position,
+        # there may be multiple atoms for this Wyckoff position,
+        # the second 0,1 distinguish these atoms on the same Wyckoff position
+        #the value will be set later
+        self.wyckoff_instance_id=None
         self.frac_coord = deepcopy(frac_coord)
         self.basis = deepcopy(basis)
         self.origin_cart = deepcopy(origin_cart)  # ← Store origin!
@@ -584,6 +591,7 @@ class atomIndex:
         repr_info = f", Repr: ✓" if self.orbital_representations is not None else ""
         return (f"Atom: {self.atom_type}, "
                 f"position_name='{self.position_name}', "
+                f"wyckoff_instance_id='{self.wyckoff_instance_id}', "
                 f"Cell: [{self.n0}, {self.n1}, {self.n2}], "
                 f"Frac: {self.frac_coord}, "
                 f"Cart: {self.cart_coord}, "
@@ -677,6 +685,7 @@ def compute_dist(center_atom, unit_cell_atoms, search_range=10, radius=None, sea
                             repr_d_np=deepcopy(unit_atom.repr_d_np),
                             repr_f_np=deepcopy(unit_atom.repr_f_np)
                         )
+                        neighbor_atom.wyckoff_instance_id=unit_atom.wyckoff_instance_id
 
                         # Deep copy orbital information from unit cell atom
                         # neighbor_atom.orbitals = deepcopy(unit_atom.orbitals)
@@ -1292,7 +1301,7 @@ def generate_atoms_in_unit_cell(parsed_config,space_group_bilbao_cart, lattice_b
             tolerance=tolerance
         )
         # Create atomIndex objects for each position in the orbit
-        for pos_data in orbit:
+        for index, pos_data in enumerate(orbit):
             atom = atomIndex(
                 cell=[0, 0, 0],  # Always the home unit cell
                 frac_coord=pos_data['fractional_coordinates'],
@@ -1305,6 +1314,8 @@ def generate_atoms_in_unit_cell(parsed_config,space_group_bilbao_cart, lattice_b
                 repr_d_np=repr_d,
                 repr_f_np=repr_f
             )
+            wyckoff_instance_id_tmp=atom.position_name+str(index)
+            atom.wyckoff_instance_id=wyckoff_instance_id_tmp
             unit_cell_atoms.append(atom)
 
     return unit_cell_atoms
@@ -2244,7 +2255,7 @@ def print_tree(root, prefix="", is_last=True, show_details=True, max_depth=None,
     # Basic info: atom types and operation
     to_cell = f"[{hop.to_atom.n0},{hop.to_atom.n1},{hop.to_atom.n2}]"
     from_cell = f"[{hop.from_atom.n0},{hop.from_atom.n1},{hop.from_atom.n2}]"
-    basic_info = f"{hop.to_atom.atom_type}{to_cell} ← {hop.from_atom.atom_type}{from_cell}"
+    basic_info = f"{hop.to_atom.wyckoff_instance_id}{to_cell} ← {hop.from_atom.wyckoff_instance_id}{from_cell}"
 
     # Print main node line
     if show_details:
@@ -2307,7 +2318,7 @@ def print_all_trees(roots_list, show_details=True, max_trees=None, max_depth=Non
 
         print(f"\n{'─' * 80}")
         print(f"Tree {i}: Distance = {hop.distance:.6f}, "
-              f"Hopping: {hop.to_atom.atom_type} ← {hop.from_atom.atom_type}")
+              f"Hopping: {hop.to_atom.position_name} ← {hop.from_atom.position_name}")
         print(f"{'─' * 80}")
 
         print_tree(root, show_details=show_details, max_depth=max_depth)
@@ -3183,8 +3194,8 @@ type_hermitian="hermitian"
 # print(unit_cell_atoms)
 # print(len(all_neighbors))
 
-atom0=unit_cell_atoms[0]
-atom1=unit_cell_atoms[1]
+# atom0=unit_cell_atoms[0]
+# atom1=unit_cell_atoms[1]
 # print(atom0)
 # print(atom1)
 equivalence_classes_center_atom_0 = get_equivalent_sets_for_one_center_atom(0, unit_cell_atoms, all_neighbors,
