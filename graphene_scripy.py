@@ -2586,11 +2586,13 @@ def add_to_root_hermitian(root1, root2, space_group_bilbao_cart,
 def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
                             lattice_basis, tolerance=1e-5, verbose=False):
     """
-    Check if hopping2 is related to hopping1 by a space group symmetry operation
+     Check if hopping2 is related to hopping1 by a space group symmetry operation.
      For tight-binding models, a linear symmetry constraint implies:
         T(hopping2) = V1(g) @ T(hopping1) @ V2(g)†
-     Geometrically, this function checks if the displacement vector of hopping2
-    is the result of applying a space group operation plus a lattice shift to the displacement vector of hopping1.
+
+    Geometrically, this function checks if the displacement vector of hopping2
+    is the result of applying a space group operation plus a lattice shift to
+    the displacement vector of hopping1.
 
     Mathematical Condition:
     ----------------------
@@ -2601,6 +2603,12 @@ def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
     operation g = (R|t) and lattice shift n_vec = [n0, n1, n2] such that:
         R @ r1 + t + n_vec·[a0,a1,a2] = r2
 
+    EDGE CASE (Self-Hopping / On-Site):
+    -----------------------------------
+    If dist1 = dist2 = 0 (hopping is from an atom to itself), the hopping vector is 0.
+    The condition simplifies to checking if the operation maps atom1 to atom2:
+        R @ pos_atom1 + t + n_vec·basis = pos_atom2
+
     Args:
         hopping1: First hopping object (reference hopping)
         hopping2: Second hopping object (candidate symmetry equivalent)
@@ -2610,10 +2618,11 @@ def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
         verbose: Whether to print debug information (default: False)
 
     Returns:
-        tuple: (is_linear, operation_idx, n_vec)
+         tuple: (is_linear, operation_idx, n_vec)
          - is_linear (bool): True if hopping2 is related to hopping1 via symmetry
          - operation_idx (int or None): Index of the space group operation
          - n_vec (ndarray or None): Lattice translation vector [n0, n1, n2]
+
     """
     # ==============================================================================
     # STEP 1: Extract atoms and validate types
@@ -2621,6 +2630,7 @@ def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
     # hopping1: to_atom1 (center) ← from_atom1 (neighbor)
     to_atom1 = hopping1.to_atom
     from_atom1 = hopping1.from_atom
+
     # hopping2: to_atom2 (center) ← from_atom2 (neighbor)
     to_atom2 = hopping2.to_atom
     from_atom2 = hopping2.from_atom
@@ -2633,15 +2643,90 @@ def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
 
     dist1 = hopping1.distance
     dist2 = hopping2.distance
+
     # Check 1: Hopping distances must be identical (isometry)
     if np.abs(dist1 - dist2) > tolerance:
         return False, None, None
-    # Check 2: Atom types must match for a valid symmetry operation
-    # A symmetry operation maps an atom to another atom of the SAME species and Wyckoff position
-    if to_atom1_position_name!=to_atom2_position_name or from_atom1_position_name!=from_atom2_position_name:
+
+    # Check 2: Atom wyckoff position must match for a valid symmetry operation
+    if to_atom1_position_name != to_atom2_position_name or from_atom1_position_name != from_atom2_position_name:
         return False, None, None
 
+    # ==============================================================================
+    # STEP 2: Handle Edge Case (Self-Hopping / On-Site Terms)
+    # ==============================================================================
 
+    is_self_hopping = (dist1 < tolerance)
+
+    if is_self_hopping:
+        # For self-hopping, center and neighbor are the same atom
+        # We need to check if the operation maps atom1 to atom2.
+        # Equation: R @ pos_atom1 + t + n_vec·basis = pos_atom2
+        pos_atom1 = to_atom1.cart_coord
+        pos_atom2 = to_atom2.cart_coord
+        for op_idx in range(len(space_group_bilbao_cart)):
+            R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+            # Apply operation to atom1 position
+            transformed_pos = R @ pos_atom1 + t
+            # Calculate required shift to reach atom2
+            required_lattice_shift = pos_atom2 - transformed_pos
+            is_lattice, n_vec = is_lattice_vector(
+                required_lattice_shift,
+                lattice_basis,
+                tolerance
+            )
+            if is_lattice:
+                # Double-check
+                a0, a1, a2 = lattice_basis[0], lattice_basis[1], lattice_basis[2]
+                n0, n1, n2 = n_vec[0], n_vec[1], n_vec[2]
+                lattice_translation = n0 * a0 + n1 * a1 + n2 * a2
+                full_transform = transformed_pos + lattice_translation
+                difference = pos_atom2 - full_transform
+
+                if np.linalg.norm(difference) < tolerance:
+                    return True, op_idx, n_vec.astype(int)
+        # If loop finishes for self-hopping without match
+        return False, None, None
+
+    # ==============================================================================
+    # STEP 3: Standard Case (Inter-atomic Hopping)
+    # ==============================================================================
+    # Displacement vector for hopping1
+    hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
+    # Displacement vector for hopping2
+    hopping_vec2 = to_atom2.cart_coord - from_atom2.cart_coord
+    for op_idx in range(len(space_group_bilbao_cart)):
+        # Extract rotation R and translation t from space group operation
+        R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+        # Apply rotation and translation to hopping_vec1
+        # transformed = R @ r1 + t
+        transformed_vec = R @ hopping_vec1 + t
+        # Calculate required lattice shift
+        # We need: transformed_vec + n_vec·basis = hopping_vec2
+        # Therefore: n_vec·basis = hopping_vec2 - transformed_vec
+        required_lattice_shift = hopping_vec2 - transformed_vec
+        # Check if required_lattice_shift is a lattice vector
+        is_lattice, n_vec = is_lattice_vector(
+            required_lattice_shift,
+            lattice_basis,
+            tolerance
+        )
+        if is_lattice:
+            # Double-check: verify the transformation explicitly
+            a0, a1, a2 = lattice_basis[0], lattice_basis[1], lattice_basis[2]
+            n0, n1, n2 = n_vec[0], n_vec[1], n_vec[2]
+            lattice_translation = n0 * a0 + n1 * a1 + n2 * a2
+            # Full transformation: R @ hopping_vec1 + t + n_vec·[a0,a1,a2]
+            full_transform = transformed_vec + lattice_translation
+            # Check difference
+            difference = hopping_vec2 - full_transform
+            if np.linalg.norm(difference) < tolerance:
+                return True, op_idx, n_vec.astype(int)
+
+    # ==============================================================================
+    # No linear relationship found
+    # ==============================================================================
+    return False, None, None
 
 
 def add_to_root_linear(root1, root2, space_group_bilbao_cart,
@@ -3032,6 +3117,7 @@ def tree_grafting_hermitian(roots_all,space_group_bilbao_cart,lattice_basis,type
             verbose
         )
         if was_grafted:
+            # print("hermitian")
             pass
         else:
             roots_grafted_hermitian.append(root_to_be_grafted)
@@ -3207,16 +3293,17 @@ print(f"identity_idx={identity_idx}")
 
 roots_all=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbors,space_group_bilbao_cart,identity_idx,type_linear,True)
 # print_all_trees(roots_all)
-roots_grafted_hermitian=tree_grafting_hermitian(roots_all,
+roots_grafted_linear=tree_grafting_linear(roots_all,
+                                          space_group_bilbao_cart,
+                                          lattice_basis,
+                                          type_linear)
+
+roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
                                                 space_group_bilbao_cart,
                                                 lattice_basis,
                                                 type_hermitian
                                                 )
 
-roots_grafted_linear=tree_grafting_linear(roots_grafted_hermitian,
-                                          space_group_bilbao_cart,
-                                          lattice_basis,
-                                          type_linear
-                                    )
 
-print_all_trees(roots_grafted_linear)
+
+print_all_trees(roots_grafted_hermitian)

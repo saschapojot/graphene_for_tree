@@ -81,11 +81,11 @@ ax.scatter(all_C01_atoms[:, 0], all_C01_atoms[:, 1], s=400, c='lightblue',
 # NEW CODE ADDED HERE: Label ALL atoms with C0 or C1
 # ---------------------------------------------------------
 for x, y in all_C00_atoms:
-    ax.text(x, y, 'C0', ha='center', va='center', fontsize=9,
+    ax.text(x, y, 'C00', ha='center', va='center', fontsize=9,
             fontweight='bold', color='darkred', zorder=11)
 
 for x, y in all_C01_atoms:
-    ax.text(x, y, 'C0', ha='center', va='center', fontsize=9,
+    ax.text(x, y, 'C01', ha='center', va='center', fontsize=9,
             fontweight='bold', color='darkblue', zorder=11)
 # ---------------------------------------------------------
 
