@@ -1526,16 +1526,6 @@ def get_next_for_center(center_atom, seed_atom, center_seed_distance, space_grou
     # Debug output: Print operation and atom information
     # ==============================================================================
 
-    if verbose:
-        print(f"\n{'=' * 60}")
-        print(f"GET_NEXT_FOR_CENTER - Operation {operation_idx}")
-        print(f"{'=' * 60}")
-        print(f"Center atom: {center_atom.atom_type} at {center_atom.cart_coord}")
-        print(f"Seed atom: {seed_atom.atom_type} at {seed_atom.cart_coord}")
-        print(f"Hopping: center ← seed (distance: {center_seed_distance:.6f})")
-        print(f"Lattice basis:")
-        for i, basis_vec in enumerate(lattice_basis):
-            print(f"  a{i} = {basis_vec}")
 
     # ==============================================================================
     # STEP 1: Check center atom invariance
@@ -1587,16 +1577,7 @@ def get_next_for_center(center_atom, seed_atom, center_seed_distance, space_grou
         # This verifies that: |r_center - (R @ r_seed + b + lattice_shift)| = |r_center - r_seed|
 
         dist_is_equal = (np.abs(new_center_seed_dist - center_seed_distance) < tolerance)
-        if verbose:
-            print(f"\n✓ Center atom IS invariant under operation {operation_idx}")
-            print(f"  Lattice shift n_vec = {n_vec}")
-            print(f"  Applying transformation to seed atom:")
-            print(f"  Original seed position: {seed_cart_coord}")
-            print(f"  Transformed position: {next_cart_coord}")
-            print(f"  Seed displacement: {next_cart_coord - seed_cart_coord}")
-            print(f"  Original hopping distance (center ← seed): {center_seed_distance:.6f}")
-            print(f"  New hopping distance (center ← transformed): {new_center_seed_dist:.6f}")
-            print(f"  Distance preserved: {dist_is_equal}")
+
 
         # Only return the transformed position if distance is preserved
         # This ensures the generated coordinate represents a symmetry-equivalent atom
@@ -1605,9 +1586,6 @@ def get_next_for_center(center_atom, seed_atom, center_seed_distance, space_grou
         else:
             # Distance not preserved - this indicates a numerical error or
             # inconsistency in the symmetry operation (shouldn't happen in practice)
-            if verbose:
-                print(f"  ✗ Hopping distance NOT preserved - returning None")
-                print(f"  WARNING: This may indicate a problem with the symmetry operation")
             return None
 
     else:
@@ -1616,15 +1594,11 @@ def get_next_for_center(center_atom, seed_atom, center_seed_distance, space_grou
         # ==============================================================================
         # The center atom does not map to itself (even with lattice translations)
         # under this space group operation. Therefore, abandon this symmetry operation
-        if verbose:
-            print(f"\n✗ Center atom is NOT invariant under operation {operation_idx}")
-            print(f"  Returning None (no equivalent position generated)")
-            print(f"  This operation maps center to a different atomic site")
         return None
 
 
 
-def search_one_equivalent_atom(target_cart_coord, neighbor_atoms_copy, tolerance=1e-5, verbose=False):
+def search_one_equivalent_atom(seed_atom,target_cart_coord, neighbor_atoms_copy, tolerance=1e-5, verbose=False):
     """
     Search for an atom in the neighbor_atoms_copy set whose Cartesian coordinate matches the target.
     This function is used to find which actual neighbor atom corresponds to a transformed
@@ -1652,7 +1626,7 @@ def search_one_equivalent_atom(target_cart_coord, neighbor_atoms_copy, tolerance
         # Compute Euclidean distance between target position and this neighbor's position
         distance = np.linalg.norm(target_cart_coord - neighbor.cart_coord, ord=2)
         # Check if the distance is within tolerance (positions match)
-        if distance < tolerance:
+        if distance < tolerance and seed_atom.position_name==neighbor.position_name:
             # Return a REFERENCE (pointer in C sense, reference in C++ sense) to the matching neighbor atom
             # This is NOT a deep copy - it's the same object that exists in neighbor_atoms_copy
             # This allows the caller to use this reference to remove the atom from neighbor_atoms_copy
@@ -1814,6 +1788,7 @@ def get_equivalent_sets_for_one_center_atom(center_atom_idx, unit_cell_atoms, al
                 # transformed_coord: 3D Cartesian position after applying symmetry operation
                 # n_vec: Lattice translation [n₀, n₁, n₂] needed to preserve center invariance
                 transformed_coord, n_vec = result
+
                 # ==============================================================================
                 # Search for matching neighbor in the remaining unclassified set
                 # ==============================================================================
@@ -1832,6 +1807,7 @@ def get_equivalent_sets_for_one_center_atom(center_atom_idx, unit_cell_atoms, al
                 # Remember: matched_neighbor references a COPIED atomIndex object (obj_X')
                 # NOT an original from all_neighbors (obj_X)
                 matched_neighbor = search_one_equivalent_atom(
+                    seed_atom,
                     target_cart_coord=transformed_coord,
                     neighbor_atoms_copy=neighbor_atoms_copy,
                     tolerance=tolerance,
@@ -2260,7 +2236,7 @@ def print_tree(root, prefix="", is_last=True, show_details=True, max_depth=None,
     # Print main node line
     if show_details:
         print(f"{prefix}{connector}{node_label}: {basic_info}, "
-              f"op={hop.operation_idx}, d={hop.distance:.4f}")
+              f"op={hop.operation_idx}, dist={hop.distance:.4f}")
     else:
         print(f"{prefix}{connector}{node_label}: op={hop.operation_idx}")
 
@@ -3280,30 +3256,81 @@ type_hermitian="hermitian"
 # print(unit_cell_atoms)
 # print(len(all_neighbors))
 
-# atom0=unit_cell_atoms[0]
+atom0=unit_cell_atoms[0]
 # atom1=unit_cell_atoms[1]
-# print(atom0)
+print(atom0)
 # print(atom1)
 equivalence_classes_center_atom_0 = get_equivalent_sets_for_one_center_atom(0, unit_cell_atoms, all_neighbors,
                                                                                     space_group_bilbao_cart,
                                                                                     identity_idx)
 print(f"identity_idx={identity_idx}")
-# print(equivalence_classes_center_atom_0[2])
+ind=5
+
+atoms_in_eq_class=equivalence_classes_center_atom_0[ind]
+print(len(atoms_in_eq_class))
+print(atoms_in_eq_class)
+seed_atom=atoms_in_eq_class[0][0]
+print(f"seed_atom={seed_atom}")
+center_seed_distance=np.linalg.norm(atom0.cart_coord-seed_atom.cart_coord,ord=2)
+print(f"center_seed_distance={center_seed_distance}")
+neighbor_atoms_copy = set(deepcopy(all_neighbors[0]))
+# print(f"neighbor_atoms_copy={neighbor_atoms_copy}")
 
 
-roots_all=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbors,space_group_bilbao_cart,identity_idx,type_linear,True)
+tolerance=1e-5
+for operation_idx in range(len(space_group_bilbao_cart)):
+    # Skip identity operation (already handled)
+    if operation_idx == identity_idx:
+        continue
+    result = get_next_for_center(
+        center_atom=atom0,
+        seed_atom=seed_atom,
+        center_seed_distance=center_seed_distance,
+        space_group_bilbao_cart=space_group_bilbao_cart,
+        operation_idx=operation_idx,
+        parsed_config=parsed_config,
+        tolerance=tolerance,
+    )
+    if result is not None:
+        # print(f"operation_idx={operation_idx}, result={result}")
+        transformed_coord, n_vec = result
+        matched_neighbor = search_one_equivalent_atom(
+            seed_atom,
+            target_cart_coord=transformed_coord,
+            neighbor_atoms_copy=neighbor_atoms_copy,
+            tolerance=tolerance
+        )
+        print(matched_neighbor)
+
+# roots_all=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbors,space_group_bilbao_cart,identity_idx,type_linear,True)
 # print_all_trees(roots_all)
-roots_grafted_linear=tree_grafting_linear(roots_all,
-                                          space_group_bilbao_cart,
-                                          lattice_basis,
-                                          type_linear)
 
-roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
-                                                space_group_bilbao_cart,
-                                                lattice_basis,
-                                                type_hermitian
-                                                )
+#########################find linear first, hermitian second
+# roots_grafted_linear=tree_grafting_linear(roots_all,
+#                                           space_group_bilbao_cart,
+#                                           lattice_basis,
+#                                           type_linear)
+#
+# roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
+#                                                 space_group_bilbao_cart,
+#                                                 lattice_basis,
+#                                                 type_hermitian
+#                                                 )
+#
+#
+#
+# print_all_trees(roots_grafted_hermitian)
 
-
-
-print_all_trees(roots_grafted_hermitian)
+#########################find hermitian first, linear second
+# roots_grafted_hermitian=tree_grafting_hermitian(roots_all,
+#                                                 space_group_bilbao_cart,
+#                                                 lattice_basis,
+#                                                 type_hermitian
+#                                                 )
+#
+# roots_grafted_linear=tree_grafting_linear(roots_grafted_hermitian,
+#                                           space_group_bilbao_cart,
+#                                           lattice_basis,
+#                                           type_linear)
+#
+# print_all_trees(roots_grafted_linear)
