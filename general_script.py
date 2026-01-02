@@ -2241,21 +2241,22 @@ def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
     # print("entering here")
 
 
-    hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
+    # hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
     # print(f"hopping_vec1={hopping_vec1}")
     # Displacement vector for hopping2
-    hopping_vec2 = to_atom2.cart_coord - from_atom2.cart_coord
+    # hopping_vec2 = to_atom2.cart_coord - from_atom2.cart_coord
     # print(f"hopping_vec2={hopping_vec2}")
     for op_idx in range(len(space_group_bilbao_cart)):
         # Extract rotation R and translation t from space group operation
         R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
-        # Apply rotation and translation to hopping_vec1
+        # Apply rotation and translation to to_atom1.cart_coord
         # transformed = R @ r1 + t
-        transformed_vec = R @ hopping_vec1 + t
+        transformed_to_atom1_pos = R @ to_atom1.cart_coord + t
+        transformed_to_atom2_pos = R @ to_atom2.cart_coord + t
         # Calculate required lattice shift
         # We need: transformed_vec + n_vec·basis = hopping_vec2
         # Therefore: n_vec·basis = hopping_vec2 - transformed_vec
-        required_lattice_shift = hopping_vec2 - transformed_vec
+        required_lattice_shift = transformed_to_atom2_pos - transformed_to_atom1_pos
         # Check if required_lattice_shift is a lattice vector
         is_lattice, n_vec = is_lattice_vector(
             required_lattice_shift,
@@ -2280,139 +2281,6 @@ def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
     return False, None, None
 
 
-
-
-# def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
-#                             lattice_basis, tolerance=1e-5, verbose=False):
-#     """
-#     Check if hopping2 is the Hermitian conjugate of hopping1.
-#     For tight-binding models, Hermiticity requires:
-#         H† = H  =>  T(i ← j) = T(j ← i)†
-#
-#     This function checks if hopping2 corresponds to the reverse direction of hopping1
-#     under some space group operation with lattice translation.
-#
-#     Mathematical Condition:
-#     ----------------------
-#     Given hopping1: center1 ← neighbor1
-#           And hopping2: center2 ← neighbor2
-#     hopping2 is Hermitian conjugate of hopping1 if there exists a space group
-#     operation g = (R|t) and lattice shift n_vec = [n0, n1, n2] such that:
-#     1. The conjugate of hopping2 (neighbor2 ← center2) equals the transformed hopping1
-#     2. Specifically: R @ (center1 - neighbor1) + t + n_vec·[a0,a1,a2] = neighbor2 - center2
-#
-#     This means the hopping vector transforms consistently under the symmetry operation.
-#     Args:
-#         hopping1: First hopping object (reference hopping)
-#         hopping2: Second hopping object (candidate Hermitian conjugate)
-#         space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
-#                                 using Bilbao origin (shape: num_ops × 3 × 4)
-#         lattice_basis: Primitive lattice basis vectors (3×3 array, each row is a basis vector)
-#                       expressed in Cartesian coordinates using Bilbao origin
-#         tolerance: Numerical tolerance for comparison (default: 1e-5)
-#         verbose: Whether to print debug information (default: False)
-#
-#     Returns:
-#         tuple: (is_hermitian, operation_idx, n_vec)
-#         - is_hermitian (bool): True if hopping2 is Hermitian conjugate of hopping1
-#         - operation_idx (int or None): Index of the space group operation that
-#                                         relates hopping1 to hopping2, or None if not Hermitian conjugate
-#         - n_vec (ndarray or None): Lattice translation vector [n0, n1, n2],
-#                                    or None if not Hermitian conjugate
-#
-#     Example:
-#         For hBN with hopping1: N[0,0,0] ← B[0,0,0]
-#         and hopping2: B[0,0,0] ← N[0,0,0]
-#         These are Hermitian conjugates under identity operation with zero lattice shift.
-#     """
-#     # ==============================================================================
-#     # STEP 1: Get atoms from both hoppings
-#     # ==============================================================================
-#     # hopping1: to_atom1 (center) ← from_atom1 (neighbor)
-#     to_atom1 = hopping1.to_atom
-#     from_atom1 = hopping1.from_atom
-#
-#     # hopping2: to_atom2 (center) ← from_atom2 (neighbor)
-#     # For Hermiticity, we need the CONJUGATE (reverse direction)
-#     # conjugate of hopping2: to_atom2c (becomes center) ← from_atom2c (becomes neighbor)
-#     to_atom2c, from_atom2c = hopping2.conjugate()
-#
-#     to_atom1_position_name = to_atom1.position_name
-#     from_atom1_position_name = from_atom1.position_name
-#
-#     to_atom2c_position_name = to_atom2c.position_name
-#     from_atom2c_position_name = from_atom2c.position_name
-#     dist1 = hopping1.distance
-#     dist2 = hopping2.distance
-#     if np.abs(dist1-dist2)>tolerance:
-#         return False, None, None
-#     if to_atom1_position_name!=to_atom2c_position_name or from_atom1_position_name!=from_atom2c_position_name:
-#         return False, None, None
-#     # ==============================================================================
-#     # STEP 2: Handle Edge Case (Self-Hopping / On-Site Terms)
-#     # ==============================================================================
-#     is_self_hopping = (dist1 < tolerance)
-#     if is_self_hopping:
-#         # # For self-hopping, center and neighbor are the same atom
-#         ## We need to check if the operation maps atom1 to atom2
-#         # Equation: R @ pos_atom1 + t + n_vec·basis = pos_atom2
-#         pos_atom1 = to_atom1.cart_coord
-#         pos_atom2c=to_atom2c.cart_coord
-#         for op_idx in range(len(space_group_bilbao_cart)):
-#             R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
-#             # Apply operation to atom1 position
-#             transformed_pos = R @ pos_atom1 + t
-#             # Calculate required shift to reach atom2
-#             required_lattice_shift = pos_atom2c - transformed_pos
-#             is_lattice, n_vec = is_lattice_vector(
-#                 required_lattice_shift,
-#                 lattice_basis,
-#                 tolerance
-#             )
-#             if is_lattice:
-#                 return True, op_idx, n_vec.astype(int)
-#         # If loop finishes for self-hopping without match
-#         return False, None, None
-#     # ==============================================================================
-#     # STEP 3: Standard Case (Inter-atomic Hopping)
-#     # ==============================================================================
-#     # Displacement vector for hopping1
-#     # print("entering here")
-#     hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
-#     hopping_vec2c =to_atom2c.cart_coord-from_atom2c.cart_coord
-#     for op_idx in range(len(space_group_bilbao_cart)):
-#         # Extract rotation R and translation t from space group operation
-#         R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
-#         # Apply rotation and translation to hopping_vec1
-#         # transformed = R @ r1 + t
-#         transformed_vec = R @ hopping_vec1 + t
-#         # Calculate required lattice shift
-#         # We need: transformed_vec + n_vec·basis = hopping_vec2c
-#         # Therefore: n_vec·basis = hopping_vec2c - transformed_vec
-#         required_lattice_shift = hopping_vec2c - transformed_vec
-#         # Check if required_lattice_shift is a lattice vector
-#         is_lattice, n_vec = is_lattice_vector(
-#             required_lattice_shift,
-#             lattice_basis,
-#             tolerance
-#         )
-#         if is_lattice:
-#             # check if this operation maps to_atom1 to to_atom2c, and maps from_atom1 to from_atom2c
-#
-#             to_atoms_match = apply_full_transformation_and_check_position(to_atom1, to_atom2c, R, t, lattice_basis,
-#                                                                           n_vec, tolerance)
-#             from_atoms_match = apply_full_transformation_and_check_position(from_atom1, from_atom2c, R, t, lattice_basis,
-#                                                                             n_vec,
-#                                                                             tolerance)
-#             print(f"is_lattice={is_lattice}, op_idx={op_idx}, n_vec={n_vec}, to_atoms_match={to_atoms_match}, from_atoms_match={from_atoms_match}")
-#             if to_atoms_match and from_atoms_match:
-#                 return True, op_idx, n_vec.astype(int)
-#             else:
-#                 continue
-#     # ==============================================================================
-#     # No linear relationship found
-#     # ==============================================================================
-#     return False, None, None
 
 
 def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
@@ -2481,52 +2349,185 @@ def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
         return False, None, None
     if to_atom1_position_name!=to_atom2c_position_name or from_atom1_position_name!=from_atom2c_position_name:
         return False, None, None
-
     # ==============================================================================
-    # STEP 2: Compute hopping vectors in Cartesian coordinates
+    # STEP 2: Handle Edge Case (Self-Hopping / On-Site Terms)
     # ==============================================================================
-    # Hopping vector for hopping1: points from neighbor to center
-    # This is the displacement vector of the hopping
-    hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
-    # Hopping vector for conjugate of hopping2
-    # For Hermiticity, this should equal the transformed hopping_vec1
-    hopping_vec2_conj = to_atom2c.cart_coord - from_atom2c.cart_coord
-
+    is_self_hopping = (dist1 < tolerance)
+    if is_self_hopping:
+        # # For self-hopping, center and neighbor are the same atom
+        ## We need to check if the operation maps atom1 to atom2
+        # Equation: R @ pos_atom1 + t + n_vec·basis = pos_atom2
+        pos_atom1 = to_atom1.cart_coord
+        pos_atom2c=to_atom2c.cart_coord
+        for op_idx in range(len(space_group_bilbao_cart)):
+            R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+            # Apply operation to atom1 position
+            transformed_pos = R @ pos_atom1 + t
+            # Calculate required shift to reach atom2
+            required_lattice_shift = pos_atom2c - transformed_pos
+            is_lattice, n_vec = is_lattice_vector(
+                required_lattice_shift,
+                lattice_basis,
+                tolerance
+            )
+            if is_lattice:
+                return True, op_idx, n_vec.astype(int)
+        # If loop finishes for self-hopping without match
+        return False, None, None
     # ==============================================================================
-    # STEP 3: Search for space group operation relating the two hoppings
+    # STEP 3: Standard Case (Inter-atomic Hopping)
     # ==============================================================================
-    # Iterate through all space group operations to find one that transforms
-    # hopping1 into the conjugate of hopping2
+    # Displacement vector for hopping1
+    # print("entering here")
+    # hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
+    # hopping_vec2c =to_atom2c.cart_coord-from_atom2c.cart_coord
     for op_idx in range(len(space_group_bilbao_cart)):
         # Extract rotation R and translation t from space group operation
         R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
-        # ==============================================================================
-        # Check whether R @ hopping_vec1 + t + n0*a0 + n1*a1 + n2*a2 = hopping_vec2_conj
-        # ==============================================================================
-        # Apply rotation to hopping vector
-        transformed_vec = R @ hopping_vec1 + t
+        # Apply rotation and translation to to_atom1.cart_coord
+        # transformed = R @ r1 + t
+        transformed_to_atom1_pos = R @ to_atom1.cart_coord + t
+        transformed_to_atom2c_pos=R@to_atom2c.cart_coord+t
         # Calculate required lattice shift
-        # We need: transformed_vec + n_vec·[a0,a1,a2] = hopping_vec2_conj
-        # Therefore: n_vec·[a0,a1,a2] = hopping_vec2_conj - transformed_vec
-        required_lattice_shift = hopping_vec2_conj - transformed_vec
+        #match to_atom1 with to_atom2c
+        required_lattice_shift = transformed_to_atom2c_pos - transformed_to_atom1_pos
         # Check if required_lattice_shift is a lattice vector
-        # (i.e., can be expressed as n0*a0 + n1*a1 + n2*a2 with integer n0, n1, n2)
         is_lattice, n_vec = is_lattice_vector(
             required_lattice_shift,
             lattice_basis,
             tolerance
         )
-        print(f"is_lattice={is_lattice}")
-        # ==============================================================================
-        # If lattice vector found, verify and return
-        # ==============================================================================
         if is_lattice:
-            return True, op_idx, n_vec.astype(int)
+            # check if this operation maps to_atom1 to to_atom2c, and maps from_atom1 to from_atom2c
 
+            to_atoms_match = apply_full_transformation_and_check_position(to_atom1, to_atom2c, R, t, lattice_basis,
+                                                                          n_vec, tolerance)
+            from_atoms_match = apply_full_transformation_and_check_position(from_atom1, from_atom2c, R, t, lattice_basis,
+                                                                            n_vec,
+                                                                            tolerance)
+            print(f"is_lattice={is_lattice}, op_idx={op_idx}, n_vec={n_vec}, to_atoms_match={to_atoms_match}, from_atoms_match={from_atoms_match}")
+            if to_atoms_match and from_atoms_match:
+                return True, op_idx, n_vec.astype(int)
+            else:
+                continue
     # ==============================================================================
-    # No Hermitian relationship found
+    # No linear relationship found
     # ==============================================================================
     return False, None, None
+
+
+# def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
+#                             lattice_basis, tolerance=1e-5, verbose=False):
+#     """
+#     Check if hopping2 is the Hermitian conjugate of hopping1.
+#     For tight-binding models, Hermiticity requires:
+#         H† = H  =>  T(i ← j) = T(j ← i)†
+#
+#     This function checks if hopping2 corresponds to the reverse direction of hopping1
+#     under some space group operation with lattice translation.
+#
+#     Mathematical Condition:
+#     ----------------------
+#     Given hopping1: center1 ← neighbor1
+#           And hopping2: center2 ← neighbor2
+#     hopping2 is Hermitian conjugate of hopping1 if there exists a space group
+#     operation g = (R|t) and lattice shift n_vec = [n0, n1, n2] such that:
+#     1. The conjugate of hopping2 (neighbor2 ← center2) equals the transformed hopping1
+#     2. Specifically: R @ (center1 - neighbor1) + t + n_vec·[a0,a1,a2] = neighbor2 - center2
+#
+#     This means the hopping vector transforms consistently under the symmetry operation.
+#     Args:
+#         hopping1: First hopping object (reference hopping)
+#         hopping2: Second hopping object (candidate Hermitian conjugate)
+#         space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
+#                                 using Bilbao origin (shape: num_ops × 3 × 4)
+#         lattice_basis: Primitive lattice basis vectors (3×3 array, each row is a basis vector)
+#                       expressed in Cartesian coordinates using Bilbao origin
+#         tolerance: Numerical tolerance for comparison (default: 1e-5)
+#         verbose: Whether to print debug information (default: False)
+#
+#     Returns:
+#         tuple: (is_hermitian, operation_idx, n_vec)
+#         - is_hermitian (bool): True if hopping2 is Hermitian conjugate of hopping1
+#         - operation_idx (int or None): Index of the space group operation that
+#                                         relates hopping1 to hopping2, or None if not Hermitian conjugate
+#         - n_vec (ndarray or None): Lattice translation vector [n0, n1, n2],
+#                                    or None if not Hermitian conjugate
+#
+#     Example:
+#         For hBN with hopping1: N[0,0,0] ← B[0,0,0]
+#         and hopping2: B[0,0,0] ← N[0,0,0]
+#         These are Hermitian conjugates under identity operation with zero lattice shift.
+#     """
+#     # ==============================================================================
+#     # STEP 1: Get atoms from both hoppings
+#     # ==============================================================================
+#     # hopping1: to_atom1 (center) ← from_atom1 (neighbor)
+#     to_atom1 = hopping1.to_atom
+#     from_atom1 = hopping1.from_atom
+#
+#     # hopping2: to_atom2 (center) ← from_atom2 (neighbor)
+#     # For Hermiticity, we need the CONJUGATE (reverse direction)
+#     # conjugate of hopping2: to_atom2c (becomes center) ← from_atom2c (becomes neighbor)
+#     to_atom2c, from_atom2c = hopping2.conjugate()
+#
+#     to_atom1_position_name = to_atom1.position_name
+#     from_atom1_position_name = from_atom1.position_name
+#
+#     to_atom2c_position_name = to_atom2c.position_name
+#     from_atom2c_position_name = from_atom2c.position_name
+#     dist1 = hopping1.distance
+#     dist2 = hopping2.distance
+#     if np.abs(dist1-dist2)>tolerance:
+#         return False, None, None
+#     if to_atom1_position_name!=to_atom2c_position_name or from_atom1_position_name!=from_atom2c_position_name:
+#         return False, None, None
+#
+#     # ==============================================================================
+#     # STEP 2: Compute hopping vectors in Cartesian coordinates
+#     # ==============================================================================
+#     # Hopping vector for hopping1: points from neighbor to center
+#     # This is the displacement vector of the hopping
+#     hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
+#     # Hopping vector for conjugate of hopping2
+#     # For Hermiticity, this should equal the transformed hopping_vec1
+#     hopping_vec2_conj = to_atom2c.cart_coord - from_atom2c.cart_coord
+#
+#     # ==============================================================================
+#     # STEP 3: Search for space group operation relating the two hoppings
+#     # ==============================================================================
+#     # Iterate through all space group operations to find one that transforms
+#     # hopping1 into the conjugate of hopping2
+#     for op_idx in range(len(space_group_bilbao_cart)):
+#         # Extract rotation R and translation t from space group operation
+#         R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+#         # ==============================================================================
+#         # Check whether R @ hopping_vec1 + t + n0*a0 + n1*a1 + n2*a2 = hopping_vec2_conj
+#         # ==============================================================================
+#         # Apply rotation to hopping vector
+#         transformed_vec = R @ hopping_vec1 + t
+#         # Calculate required lattice shift
+#         # We need: transformed_vec + n_vec·[a0,a1,a2] = hopping_vec2_conj
+#         # Therefore: n_vec·[a0,a1,a2] = hopping_vec2_conj - transformed_vec
+#         required_lattice_shift = hopping_vec2_conj - transformed_vec
+#         # Check if required_lattice_shift is a lattice vector
+#         # (i.e., can be expressed as n0*a0 + n1*a1 + n2*a2 with integer n0, n1, n2)
+#         is_lattice, n_vec = is_lattice_vector(
+#             required_lattice_shift,
+#             lattice_basis,
+#             tolerance
+#         )
+#         print(f"is_lattice={is_lattice}")
+#         # ==============================================================================
+#         # If lattice vector found, verify and return
+#         # ==============================================================================
+#         if is_lattice:
+#             return True, op_idx, n_vec.astype(int)
+#
+#     # ==============================================================================
+#     # No Hermitian relationship found
+#     # ==============================================================================
+#     return False, None, None
 
 
 
@@ -2542,8 +2543,8 @@ equivalence_classes_center_atom_0 = get_equivalent_sets_for_one_center_atom(0, u
                                                                                     space_group_bilbao_cart,
                                                                                     identity_idx)
 
-ind4=6
-ind5=5
+ind4=2
+ind5=3
 eq_class_4=equivalence_classes_center_atom_0[ind4]
 eq_class_5=equivalence_classes_center_atom_0[ind5]
 
