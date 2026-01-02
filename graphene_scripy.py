@@ -3256,70 +3256,28 @@ type_hermitian="hermitian"
 # print(unit_cell_atoms)
 # print(len(all_neighbors))
 
-atom0=unit_cell_atoms[0]
-# atom1=unit_cell_atoms[1]
-print(atom0)
-# print(atom1)
-equivalence_classes_center_atom_0 = get_equivalent_sets_for_one_center_atom(0, unit_cell_atoms, all_neighbors,
-                                                                                    space_group_bilbao_cart,
-                                                                                    identity_idx)
-print(f"identity_idx={identity_idx}")
-ind=5
-
-atoms_in_eq_class=equivalence_classes_center_atom_0[ind]
-print(len(atoms_in_eq_class))
-print(atoms_in_eq_class)
-seed_atom=atoms_in_eq_class[0][0]
-print(f"seed_atom={seed_atom}")
-center_seed_distance=np.linalg.norm(atom0.cart_coord-seed_atom.cart_coord,ord=2)
-print(f"center_seed_distance={center_seed_distance}")
-neighbor_atoms_copy = set(deepcopy(all_neighbors[0]))
-# print(f"neighbor_atoms_copy={neighbor_atoms_copy}")
 
 
-tolerance=1e-5
-for operation_idx in range(len(space_group_bilbao_cart)):
-    # Skip identity operation (already handled)
-    if operation_idx == identity_idx:
-        continue
-    result = get_next_for_center(
-        center_atom=atom0,
-        seed_atom=seed_atom,
-        center_seed_distance=center_seed_distance,
-        space_group_bilbao_cart=space_group_bilbao_cart,
-        operation_idx=operation_idx,
-        parsed_config=parsed_config,
-        tolerance=tolerance,
-    )
-    if result is not None:
-        # print(f"operation_idx={operation_idx}, result={result}")
-        transformed_coord, n_vec = result
-        matched_neighbor = search_one_equivalent_atom(
-            seed_atom,
-            target_cart_coord=transformed_coord,
-            neighbor_atoms_copy=neighbor_atoms_copy,
-            tolerance=tolerance
-        )
-        print(matched_neighbor)
 
-# roots_all=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbors,space_group_bilbao_cart,identity_idx,type_linear,True)
-# print_all_trees(roots_all)
+
+roots_from_eq_class=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbors,space_group_bilbao_cart,identity_idx,type_linear,True)
+print_all_trees(roots_from_eq_class)
 
 #########################find linear first, hermitian second
-# roots_grafted_linear=tree_grafting_linear(roots_all,
-#                                           space_group_bilbao_cart,
-#                                           lattice_basis,
-#                                           type_linear)
-#
-# roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
-#                                                 space_group_bilbao_cart,
-#                                                 lattice_basis,
-#                                                 type_hermitian
-#                                                 )
-#
-#
-#
-# print_all_trees(roots_grafted_hermitian)
+roots_grafted_linear=tree_grafting_linear(roots_from_eq_class,
+                                          space_group_bilbao_cart,
+                                          lattice_basis,
+                                          type_linear)
+
+roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
+                                                space_group_bilbao_cart,
+                                                lattice_basis,
+                                                type_hermitian
+                                                )
+
+
+
+print_all_trees(roots_grafted_hermitian)
 
 #########################find hermitian first, linear second
 # roots_grafted_hermitian=tree_grafting_hermitian(roots_all,

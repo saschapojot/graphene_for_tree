@@ -6,6 +6,8 @@ import json
 import numpy as np
 from datetime import datetime
 from copy import deepcopy
+
+from numba.tests.test_sets import contains_usecase
 from scipy.linalg import block_diag
 import sympy as sp
 
@@ -1391,6 +1393,123 @@ print("\n" + "=" * 80)
 print("ORBITAL REPRESENTATION VERIFICATION COMPLETE")
 print("=" * 80)
 
+
+def print_tree(root, prefix="", is_last=True, show_details=True, max_depth=None, current_depth=0):
+    """
+    Print a constraint tree structure in a visual hierarchical format.
+
+    Args:
+        root: vertex object (root of tree or subtree)
+        prefix: String prefix for indentation (used in recursion)
+        is_last: Boolean indicating if this is the last child (affects connector style)
+        show_details: Whether to show detailed hopping information (default: True)
+        max_depth: Maximum depth to print (None = unlimited, default: None)
+        current_depth: Current depth in recursion (internal use, default: 0)
+
+    Tree Structure Symbols:
+        ╔═══ ROOT     (root node)
+        ├── CHILD    (middle child)
+        └── CHILD    (last child)
+        │           (vertical line for continuation)
+
+    Example Output:
+        ╔═══ ROOT: N[0,0,0] ← N[0,0,0], op=0, d=0.0000
+        ├── CHILD (linear): N[0,0,0] ← N[1,0,0], op=1, d=2.5000
+        ├── CHILD (linear): N[0,0,0] ← N[-1,1,0], op=2, d=2.5000
+        └── CHILD (linear): N[0,0,0] ← N[0,-1,0], op=3, d=2.5000
+    """
+    # Check max depth
+    if max_depth is not None and current_depth > max_depth:
+        return
+
+    # Determine node styling
+    if root.is_root:
+        node_label = "ROOT"
+        connector = "╔═══ "
+        detail_prefix = prefix
+    else:
+        node_label = f"CHILD ({root.type})"
+        connector = "└── " if is_last else "├── "
+        detail_prefix = prefix + ("    " if is_last else "│   ")
+
+    # Build node description
+    hop = root.hopping
+
+    # Basic info: atom types and operation
+    to_cell = f"[{hop.to_atom.n0},{hop.to_atom.n1},{hop.to_atom.n2}]"
+    from_cell = f"[{hop.from_atom.n0},{hop.from_atom.n1},{hop.from_atom.n2}]"
+    basic_info = f"{hop.to_atom.wyckoff_instance_id}{to_cell} ← {hop.from_atom.wyckoff_instance_id}{from_cell}"
+
+    # Print main node line
+    if show_details:
+        print(f"{prefix}{connector}{node_label}: {basic_info}, "
+              f"op={hop.operation_idx}, dist={hop.distance:.4f}")
+    else:
+        print(f"{prefix}{connector}{node_label}: op={hop.operation_idx}")
+
+    # Print additional details if requested and this is root
+    if show_details and root.is_root and current_depth == 0:
+        print(f"{detail_prefix}    ├─ Type: {root.type}")
+        print(f"{detail_prefix}    ├─ Children: {len(root.children)}")
+        print(f"{detail_prefix}    └─ Distance: {hop.distance:.6f}")
+
+    # Recursively print children
+    if root.children:
+        for i, child in enumerate(root.children):
+            is_last_child = (i == len(root.children) - 1)
+
+            # Determine new prefix for children
+            if root.is_root:
+                new_prefix = ""
+            else:
+                new_prefix = prefix + ("    " if is_last else "│   ")
+
+            print_tree(child, new_prefix, is_last_child, show_details, max_depth, current_depth + 1)
+
+def print_all_trees(roots_list, show_details=True, max_trees=None, max_depth=None):
+    """
+    Print all constraint trees in a formatted way.
+
+    Args:
+        roots_list: List of root vertex objects
+        show_details: Whether to show detailed information (default: True)
+        max_trees: Maximum number of trees to print (None = all, default: None)
+        max_depth: Maximum depth to print for each tree (None = unlimited, default: None)
+    """
+    print("\n" + "=" * 80)
+    print("CONSTRAINT TREE STRUCTURES")
+    print("=" * 80)
+
+    # CRITICAL FIX: Filter to only include actual roots (is_root == True)
+    # ================================================================
+    # ADD THIS LINE RIGHT HERE - it filters out grafted vertices
+    actual_roots = [root for root in roots_list if root.is_root]
+
+    # Print diagnostic if non-root vertices found in the list
+    if len(actual_roots) < len(roots_list):
+        print(f"\nNote: Input list contained {len(roots_list)} vertices")
+        print(f"      Filtered to {len(actual_roots)} actual roots")
+        print(f"      ({len(roots_list) - len(actual_roots)} vertices were grafted as hermitian children)\n")
+
+    # Use actual_roots instead of roots_list for counting
+    num_trees = len(actual_roots) if max_trees is None else min(max_trees, len(actual_roots))
+
+    for i in range(num_trees):
+        root = actual_roots[i]  # Changed from roots_list[i] to actual_roots[i]
+        hop = root.hopping
+
+        print(f"\n{'─' * 80}")
+        print(f"Tree {i}: Distance = {hop.distance:.6f}, "
+              f"Hopping: {hop.to_atom.position_name} ← {hop.from_atom.position_name}")
+        print(f"{'─' * 80}")
+
+        print_tree(root, show_details=show_details, max_depth=max_depth)
+
+    if max_trees is not None and len(actual_roots) > max_trees:
+        print(f"\n... and {len(actual_roots) - max_trees} more trees")
+
+    print("\n" + "=" * 80)
+
 # ==============================================================================
 # Helper function for symmetry operations
 # ==============================================================================
@@ -1424,7 +1543,9 @@ def bilbao_plus_translation(R,t,lattice_basis,n_vec,atom_cart):
     a2=lattice_basis[2]# Third primitive basis vector
     # Extract the integer coefficients for the lattice translation
     # These determine how many unit cells to shift along each basis direction
-    n0,n1,n2=n_vec
+    n0=n_vec[0]
+    n1 = n_vec[1]
+    n2 = n_vec[2]
 
     # Apply the complete symmetry transformation:
     # 1. R @ atom_cart: Apply rotation to the atom position
@@ -1806,6 +1927,610 @@ def get_equivalent_sets_for_one_center_atom(center_atom_idx, unit_cell_atoms, al
     return equivalence_classes
 
 
+
+def equivalent_class_to_hoppings(one_equivalent_class, center_atom,
+                                  space_group_bilbao_cart, identity_idx):
+    """
+    Convert an equivalence class of neighbor atoms into hopping objects.
+    Each neighbor atom in the equivalence class is saved into a hopping object.
+    The hopping contains all symmetry information (operation index, rotation, translation, lattice shift).
+
+    This function transforms the raw equivalence class data (tuples of neighbor atoms,
+    operations, and lattice shifts) into structured hopping objects that encapsulate
+    all information needed for one class of equivalent hoppings (center ← neighbor) and symmetry constraints.
+
+    Args:
+        one_equivalent_class: List of tuples (neighbor_atom, operation_idx, n_vec)
+                              where:
+                              - neighbor_atom: atomIndex object for the neighbor
+                              - operation_idx: Index of space group operation that maps
+                                              seed atom to this neighbor
+                              - n_vec: Array [n₀, n₁, n₂] of lattice translation coefficients
+        center_atom: atomIndex object for the center atom (hopping destination)
+                    All hoppings in this equivalence class have the same center atom
+         space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
+                                using Bilbao origin (shape: num_ops × 3 × 4)
+                                Used to extract rotation R and translation t for each operation
+
+        identity_idx: Index of the identity operation in space_group_bilbao_cart
+                     Used to identify which hopping is the seed (root of constraint tree)
+
+    Returns:
+        List of hopping objects (deep copied for complete independence).
+        Each hopping represents: center ← neighbor
+        The list contains:
+        - One seed hopping (with operation_idx == identity_idx, is_seed=True)
+        - Multiple derived hoppings (with other operation indices, is_seed=False)
+        All hoppings in the list have the same distance (up to numerical precision)
+    Deep Copy Strategy:
+        This function returns a DEEP COPY of the entire hopping list to ensure
+        complete independence between the returned data and any internal state.
+        Two-level protection:
+            1. Each hopping object is deep copied before adding to the list
+            2. The entire list is deep copied before returning
+        This guarantees:
+        - No shared references to the list container
+        - No shared references to hopping objects
+        - No shared references to atom objects or numpy arrays
+        - Caller has complete ownership and can modify freely
+    """
+    # Initialize hopping list
+    hoppings = []
+    # Convert each equivalence class member to a hopping object
+    for neighbor_atom, operation_idx, n_vec in one_equivalent_class:
+        # Extract rotation matrix R and translation vector t for this operation
+        # The space group operation [R|t] transforms the seed neighbor to this neighbor
+        R, t = get_rotation_translation(space_group_bilbao_cart, operation_idx)
+        # Determine if this is the seed hopping (generated by identity operation)
+        # The seed hopping serves as the root of the constraint tree
+        is_seed = (operation_idx == identity_idx)
+        # Create hopping object: center ← neighbor
+        # This represents the tight-binding hopping from neighbor to center atom
+        hop = hopping(
+            to_atom=deepcopy(center_atom),  # Destination: center atom (deep copied)
+            from_atom=deepcopy(neighbor_atom),  # Source: neighbor atom (deep copied)
+            operation_idx=operation_idx,  # Space group operation index (immutable int)
+            rotation_matrix=deepcopy(R),  # 3×3 rotation matrix from Bilbao (deep copied)
+            translation_vector=deepcopy(t),  # 3D translation vector from Bilbao (deep copied)
+            n_vec=deepcopy(n_vec),  # Additional lattice shift [n₀, n₁, n₂] (deep copied)
+            is_seed=is_seed  # Flag: True for seed, False for derived (immutable bool)
+        )
+        # Compute the Euclidean distance from neighbor to center
+        # All hoppings in this equivalence class should have the same distance
+        hop.compute_distance()
+        # Add this hopping to the list
+        # Deep copy hopping before adding to list (first level of protection)
+        hoppings.append(deepcopy(hop))
+
+    # Deep copy entire list before returning (second level of protection)
+    # This ensures complete independence: both list structure and contents are copied
+    return deepcopy(hoppings)
+
+def hopping_to_vertex(hopping,identity_idx,type_linear):
+    """
+    Convert a hopping object to a vertex object., for equivalent class step
+    Args:
+        hopping: hopping object to convert
+        identity_idx: Index of the identity operation
+
+    Returns:
+        vertex object (deep copied for independence)
+
+    """
+    # Determine constraint type based on whether this is a seed hopping
+    if hopping.is_seed == True:
+        constraint_type = None  # Root vertex has no parent constraint
+    else:
+        constraint_type = type_linear  # Derived from symmetry operation
+    # Create vertex with no parent (parent will be set when building tree)
+    new_vertex = vertex(hopping, constraint_type, identity_idx, parent=None)
+    return deepcopy(new_vertex)
+
+
+def one_equivalent_hopping_class_to_root(one_equivalent_hopping_class, identity_idx, type_linear, verbose=False):
+    """
+    Convert an equivalent hopping class into a constraint tree.
+
+    This function:
+    1. Converts all hoppings to vertex objects
+    2. Finds the root vertex (seed hopping with identity operation)
+    3. Connects all derived vertices as linear children of the root
+    4. Returns the root vertex (which contains references to all children)
+
+    Tree Structure Created:
+    ----------------------
+                    Root (seed, identity operation)
+                     |
+         +-----------+-----------+-----------+
+         |           |           |           |
+      Child 1     Child 2     Child 3     Child 4
+     (linear)    (linear)    (linear)    (linear)
+
+    Each child is derived from root by a symmetry operation.
+    Args:
+        one_equivalent_hopping_class: List of hopping objects (all symmetry-equivalent)
+        identity_idx:  Index of the identity operation
+        type_linear: String identifier for linear constraint type (e.g., "linear")
+        verbose: Whether to print tree construction details (default: False)
+
+    Returns:
+        vertex object: Root of the constraint tree (contains references to all children)
+
+    Raises:
+        ValueError: If no root vertex found (no seed hopping in the class)
+
+    """
+    # ==============================================================================
+    # STEP 1: Convert all hoppings to vertices
+    # ==============================================================================
+    vertex_list = [hopping_to_vertex(one_hopping, identity_idx, type_linear) for one_hopping in
+                   one_equivalent_hopping_class]
+    # ==============================================================================
+    # STEP 2: Find the root vertex (seed hopping)
+    # ==============================================================================
+    tree_root = None
+    derived_vertices = []  # List to store non-root vertices
+    for one_vertex in vertex_list:
+        if one_vertex.is_root == True:
+            if tree_root is not None:
+                # Multiple roots found - this shouldn't happen
+                raise ValueError("Multiple root vertices found in equivalence class! "
+                                 "Each class should have exactly one seed hopping.")
+            tree_root = one_vertex
+        else:
+            derived_vertices.append(one_vertex)
+
+    # ==============================================================================
+    # STEP 3: Validate that root was found
+    # ==============================================================================
+    if tree_root is None:
+        raise ValueError("No root vertex found in equivalence class! "
+                         f"Identity operation (idx={identity_idx}) not present.")
+
+    # ==============================================================================
+    # STEP 4: Connect all derived vertices as children of root
+    # ==============================================================================
+    # CRITICAL: Use add_child() to establish bidirectional parent-child relationships
+    # This creates REFERENCES (not copies) between root and children
+    for i, child_vertex in enumerate(derived_vertices):
+        tree_root.add_child(child_vertex)
+
+    # ==============================================================================
+    # STEP 5: Return the root vertex
+    # ==============================================================================
+    # IMPORTANT: Return tree_root WITHOUT deep copying
+    # ------------------------------------------------
+    # The tree_root contains REFERENCES to its children via tree_root.children
+    # Deep copying would break these parent-child references
+    # Caller receives the actual root vertex object with intact tree structure
+    return tree_root
+
+
+
+
+
+def atom_equal(atom1, atom2,tolerence=1e-5):
+    """
+    check if two atoms occupy the same position
+    Args:
+        atom1:
+        atom2:
+
+    Returns:
+
+    """
+    dist_diff=np.linalg.norm(atom1.cart_coord-atom2.cart_coord,ord=2)
+    if dist_diff<tolerence and atom1.position_name==atom2.position_name:
+        return True
+    else:
+        return False
+
+def apply_full_transformation_and_check_position(atom1,atom2,R,t,lattice_basis,n_vec,tolerance=1e-5):
+    #checks if full transformation applied to atoms goes to atom2
+    atom1_pos=atom1.cart_coord
+    atom2_pos=atom2.cart_coord
+
+    atom1_transformed_pos=bilbao_plus_translation(R,t,lattice_basis,n_vec,atom1_pos)
+    diff=np.linalg.norm(atom1_transformed_pos-atom2_pos,ord=2)
+    if diff<tolerance:
+        return True
+    else:
+        return False
+
+def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
+                            lattice_basis, tolerance=1e-5, verbose=False):
+    """
+     Check if hopping2 is related to hopping1 by a space group symmetry operation.
+     For tight-binding models, a linear symmetry constraint implies:
+        T(hopping2) = V1(g) @ T(hopping1) @ V2(g)†
+
+    Geometrically, this function checks if the displacement vector of hopping2
+    is the result of applying a space group operation plus a lattice shift to
+    the displacement vector of hopping1.
+
+    Mathematical Condition:
+    ----------------------
+    Given hopping1 vector: r1 = center1 - neighbor1
+    Given hopping2 vector: r2 = center2 - neighbor2
+
+    hopping2 is linearly related to hopping1 if there exists a space group
+    operation g = (R|t) and lattice shift n_vec = [n0, n1, n2] such that:
+        R @ r1 + t + n_vec·[a0,a1,a2] = r2
+
+    EDGE CASE (Self-Hopping / On-Site):
+    -----------------------------------
+    If dist1 = dist2 = 0 (hopping is from an atom to itself), the hopping vector is 0.
+    The condition simplifies to checking if the operation maps atom1 to atom2:
+        R @ pos_atom1 + t + n_vec·basis = pos_atom2
+
+    Args:
+        hopping1: First hopping object (reference hopping)
+        hopping2: Second hopping object (candidate symmetry equivalent)
+        space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
+        lattice_basis: Primitive lattice basis vectors (3×3 array), each row is a basis vector
+        tolerance: Numerical tolerance for comparison (default: 1e-5)
+        verbose: Whether to print debug information (default: False)
+
+    Returns:
+         tuple: (is_linear, operation_idx, n_vec)
+         - is_linear (bool): True if hopping2 is related to hopping1 via symmetry
+         - operation_idx (int or None): Index of the space group operation
+         - n_vec (ndarray or None): Lattice translation vector [n0, n1, n2]
+
+    """
+    # ==============================================================================
+    # STEP 1: Extract atoms and validate types
+    # ==============================================================================
+    # hopping1: to_atom1 (center) ← from_atom1 (neighbor)
+    to_atom1 = hopping1.to_atom
+    from_atom1 = hopping1.from_atom
+
+    # hopping2: to_atom2 (center) ← from_atom2 (neighbor)
+    to_atom2 = hopping2.to_atom
+    from_atom2 = hopping2.from_atom
+
+    to_atom1_position_name = to_atom1.position_name
+    from_atom1_position_name = from_atom1.position_name
+
+    to_atom2_position_name = to_atom2.position_name
+    from_atom2_position_name = from_atom2.position_name
+
+    dist1 = hopping1.distance
+    dist2 = hopping2.distance
+
+    # Check 1: Hopping distances must be identical (isometry)
+    if np.abs(dist1 - dist2) > tolerance:
+        return False, None, None
+
+    # Check 2: Atom wyckoff position must match for a valid symmetry operation
+    if to_atom1_position_name != to_atom2_position_name or from_atom1_position_name != from_atom2_position_name:
+        return False, None, None
+
+    # ==============================================================================
+    # STEP 2: Handle Edge Case (Self-Hopping / On-Site Terms)
+    # ==============================================================================
+
+    is_self_hopping = (dist1 < tolerance)
+
+    if is_self_hopping:
+        # For self-hopping, center and neighbor are the same atom
+        # We need to check if the operation maps atom1 to atom2.
+        # Equation: R @ pos_atom1 + t + n_vec·basis = pos_atom2
+        pos_atom1 = to_atom1.cart_coord
+        pos_atom2 = to_atom2.cart_coord
+        for op_idx in range(len(space_group_bilbao_cart)):
+            R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+            # Apply operation to atom1 position
+            transformed_pos = R @ pos_atom1 + t
+            # Calculate required shift to reach atom2
+            required_lattice_shift = pos_atom2 - transformed_pos
+            is_lattice, n_vec = is_lattice_vector(
+                required_lattice_shift,
+                lattice_basis,
+                tolerance
+            )
+            if is_lattice:
+                return True, op_idx, n_vec.astype(int)
+        # If loop finishes for self-hopping without match
+        return False, None, None
+
+    # ==============================================================================
+    # STEP 3: Standard Case (Inter-atomic Hopping)
+    # ==============================================================================
+    # Displacement vector for hopping1
+    # print("entering here")
+
+
+    hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
+    # print(f"hopping_vec1={hopping_vec1}")
+    # Displacement vector for hopping2
+    hopping_vec2 = to_atom2.cart_coord - from_atom2.cart_coord
+    # print(f"hopping_vec2={hopping_vec2}")
+    for op_idx in range(len(space_group_bilbao_cart)):
+        # Extract rotation R and translation t from space group operation
+        R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+        # Apply rotation and translation to hopping_vec1
+        # transformed = R @ r1 + t
+        transformed_vec = R @ hopping_vec1 + t
+        # Calculate required lattice shift
+        # We need: transformed_vec + n_vec·basis = hopping_vec2
+        # Therefore: n_vec·basis = hopping_vec2 - transformed_vec
+        required_lattice_shift = hopping_vec2 - transformed_vec
+        # Check if required_lattice_shift is a lattice vector
+        is_lattice, n_vec = is_lattice_vector(
+            required_lattice_shift,
+            lattice_basis,
+            tolerance
+        )
+
+        if is_lattice:
+            # check if this operation maps to_atom1 to to_atom2, and maps from_atom1 to from_atom2
+            to_atoms_match = apply_full_transformation_and_check_position(to_atom1, to_atom2, R, t,lattice_basis, n_vec, tolerance)
+            from_atoms_match = apply_full_transformation_and_check_position(from_atom1, from_atom2, R, t,lattice_basis, n_vec,
+                                                                            tolerance)
+            if to_atoms_match and from_atoms_match:
+                return True, op_idx, n_vec.astype(int)
+            else:
+                continue
+
+
+    # ==============================================================================
+    # No linear relationship found
+    # ==============================================================================
+    return False, None, None
+
+
+
+
+# def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
+#                             lattice_basis, tolerance=1e-5, verbose=False):
+#     """
+#     Check if hopping2 is the Hermitian conjugate of hopping1.
+#     For tight-binding models, Hermiticity requires:
+#         H† = H  =>  T(i ← j) = T(j ← i)†
+#
+#     This function checks if hopping2 corresponds to the reverse direction of hopping1
+#     under some space group operation with lattice translation.
+#
+#     Mathematical Condition:
+#     ----------------------
+#     Given hopping1: center1 ← neighbor1
+#           And hopping2: center2 ← neighbor2
+#     hopping2 is Hermitian conjugate of hopping1 if there exists a space group
+#     operation g = (R|t) and lattice shift n_vec = [n0, n1, n2] such that:
+#     1. The conjugate of hopping2 (neighbor2 ← center2) equals the transformed hopping1
+#     2. Specifically: R @ (center1 - neighbor1) + t + n_vec·[a0,a1,a2] = neighbor2 - center2
+#
+#     This means the hopping vector transforms consistently under the symmetry operation.
+#     Args:
+#         hopping1: First hopping object (reference hopping)
+#         hopping2: Second hopping object (candidate Hermitian conjugate)
+#         space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
+#                                 using Bilbao origin (shape: num_ops × 3 × 4)
+#         lattice_basis: Primitive lattice basis vectors (3×3 array, each row is a basis vector)
+#                       expressed in Cartesian coordinates using Bilbao origin
+#         tolerance: Numerical tolerance for comparison (default: 1e-5)
+#         verbose: Whether to print debug information (default: False)
+#
+#     Returns:
+#         tuple: (is_hermitian, operation_idx, n_vec)
+#         - is_hermitian (bool): True if hopping2 is Hermitian conjugate of hopping1
+#         - operation_idx (int or None): Index of the space group operation that
+#                                         relates hopping1 to hopping2, or None if not Hermitian conjugate
+#         - n_vec (ndarray or None): Lattice translation vector [n0, n1, n2],
+#                                    or None if not Hermitian conjugate
+#
+#     Example:
+#         For hBN with hopping1: N[0,0,0] ← B[0,0,0]
+#         and hopping2: B[0,0,0] ← N[0,0,0]
+#         These are Hermitian conjugates under identity operation with zero lattice shift.
+#     """
+#     # ==============================================================================
+#     # STEP 1: Get atoms from both hoppings
+#     # ==============================================================================
+#     # hopping1: to_atom1 (center) ← from_atom1 (neighbor)
+#     to_atom1 = hopping1.to_atom
+#     from_atom1 = hopping1.from_atom
+#
+#     # hopping2: to_atom2 (center) ← from_atom2 (neighbor)
+#     # For Hermiticity, we need the CONJUGATE (reverse direction)
+#     # conjugate of hopping2: to_atom2c (becomes center) ← from_atom2c (becomes neighbor)
+#     to_atom2c, from_atom2c = hopping2.conjugate()
+#
+#     to_atom1_position_name = to_atom1.position_name
+#     from_atom1_position_name = from_atom1.position_name
+#
+#     to_atom2c_position_name = to_atom2c.position_name
+#     from_atom2c_position_name = from_atom2c.position_name
+#     dist1 = hopping1.distance
+#     dist2 = hopping2.distance
+#     if np.abs(dist1-dist2)>tolerance:
+#         return False, None, None
+#     if to_atom1_position_name!=to_atom2c_position_name or from_atom1_position_name!=from_atom2c_position_name:
+#         return False, None, None
+#     # ==============================================================================
+#     # STEP 2: Handle Edge Case (Self-Hopping / On-Site Terms)
+#     # ==============================================================================
+#     is_self_hopping = (dist1 < tolerance)
+#     if is_self_hopping:
+#         # # For self-hopping, center and neighbor are the same atom
+#         ## We need to check if the operation maps atom1 to atom2
+#         # Equation: R @ pos_atom1 + t + n_vec·basis = pos_atom2
+#         pos_atom1 = to_atom1.cart_coord
+#         pos_atom2c=to_atom2c.cart_coord
+#         for op_idx in range(len(space_group_bilbao_cart)):
+#             R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+#             # Apply operation to atom1 position
+#             transformed_pos = R @ pos_atom1 + t
+#             # Calculate required shift to reach atom2
+#             required_lattice_shift = pos_atom2c - transformed_pos
+#             is_lattice, n_vec = is_lattice_vector(
+#                 required_lattice_shift,
+#                 lattice_basis,
+#                 tolerance
+#             )
+#             if is_lattice:
+#                 return True, op_idx, n_vec.astype(int)
+#         # If loop finishes for self-hopping without match
+#         return False, None, None
+#     # ==============================================================================
+#     # STEP 3: Standard Case (Inter-atomic Hopping)
+#     # ==============================================================================
+#     # Displacement vector for hopping1
+#     # print("entering here")
+#     hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
+#     hopping_vec2c =to_atom2c.cart_coord-from_atom2c.cart_coord
+#     for op_idx in range(len(space_group_bilbao_cart)):
+#         # Extract rotation R and translation t from space group operation
+#         R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+#         # Apply rotation and translation to hopping_vec1
+#         # transformed = R @ r1 + t
+#         transformed_vec = R @ hopping_vec1 + t
+#         # Calculate required lattice shift
+#         # We need: transformed_vec + n_vec·basis = hopping_vec2c
+#         # Therefore: n_vec·basis = hopping_vec2c - transformed_vec
+#         required_lattice_shift = hopping_vec2c - transformed_vec
+#         # Check if required_lattice_shift is a lattice vector
+#         is_lattice, n_vec = is_lattice_vector(
+#             required_lattice_shift,
+#             lattice_basis,
+#             tolerance
+#         )
+#         if is_lattice:
+#             # check if this operation maps to_atom1 to to_atom2c, and maps from_atom1 to from_atom2c
+#
+#             to_atoms_match = apply_full_transformation_and_check_position(to_atom1, to_atom2c, R, t, lattice_basis,
+#                                                                           n_vec, tolerance)
+#             from_atoms_match = apply_full_transformation_and_check_position(from_atom1, from_atom2c, R, t, lattice_basis,
+#                                                                             n_vec,
+#                                                                             tolerance)
+#             print(f"is_lattice={is_lattice}, op_idx={op_idx}, n_vec={n_vec}, to_atoms_match={to_atoms_match}, from_atoms_match={from_atoms_match}")
+#             if to_atoms_match and from_atoms_match:
+#                 return True, op_idx, n_vec.astype(int)
+#             else:
+#                 continue
+#     # ==============================================================================
+#     # No linear relationship found
+#     # ==============================================================================
+#     return False, None, None
+
+
+def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
+                            lattice_basis, tolerance=1e-5, verbose=False):
+    """
+    Check if hopping2 is the Hermitian conjugate of hopping1.
+    For tight-binding models, Hermiticity requires:
+        H† = H  =>  T(i ← j) = T(j ← i)†
+
+    This function checks if hopping2 corresponds to the reverse direction of hopping1
+    under some space group operation with lattice translation.
+
+    Mathematical Condition:
+    ----------------------
+    Given hopping1: center1 ← neighbor1
+          And hopping2: center2 ← neighbor2
+    hopping2 is Hermitian conjugate of hopping1 if there exists a space group
+    operation g = (R|t) and lattice shift n_vec = [n0, n1, n2] such that:
+    1. The conjugate of hopping2 (neighbor2 ← center2) equals the transformed hopping1
+    2. Specifically: R @ (center1 - neighbor1) + t + n_vec·[a0,a1,a2] = neighbor2 - center2
+
+    This means the hopping vector transforms consistently under the symmetry operation.
+    Args:
+        hopping1: First hopping object (reference hopping)
+        hopping2: Second hopping object (candidate Hermitian conjugate)
+        space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
+                                using Bilbao origin (shape: num_ops × 3 × 4)
+        lattice_basis: Primitive lattice basis vectors (3×3 array, each row is a basis vector)
+                      expressed in Cartesian coordinates using Bilbao origin
+        tolerance: Numerical tolerance for comparison (default: 1e-5)
+        verbose: Whether to print debug information (default: False)
+
+    Returns:
+        tuple: (is_hermitian, operation_idx, n_vec)
+        - is_hermitian (bool): True if hopping2 is Hermitian conjugate of hopping1
+        - operation_idx (int or None): Index of the space group operation that
+                                        relates hopping1 to hopping2, or None if not Hermitian conjugate
+        - n_vec (ndarray or None): Lattice translation vector [n0, n1, n2],
+                                   or None if not Hermitian conjugate
+
+    Example:
+        For hBN with hopping1: N[0,0,0] ← B[0,0,0]
+        and hopping2: B[0,0,0] ← N[0,0,0]
+        These are Hermitian conjugates under identity operation with zero lattice shift.
+    """
+    # ==============================================================================
+    # STEP 1: Get atoms from both hoppings
+    # ==============================================================================
+    # hopping1: to_atom1 (center) ← from_atom1 (neighbor)
+    to_atom1 = hopping1.to_atom
+    from_atom1 = hopping1.from_atom
+
+    # hopping2: to_atom2 (center) ← from_atom2 (neighbor)
+    # For Hermiticity, we need the CONJUGATE (reverse direction)
+    # conjugate of hopping2: to_atom2c (becomes center) ← from_atom2c (becomes neighbor)
+    to_atom2c, from_atom2c = hopping2.conjugate()
+
+    to_atom1_position_name = to_atom1.position_name
+    from_atom1_position_name = from_atom1.position_name
+
+    to_atom2c_position_name = to_atom2c.position_name
+    from_atom2c_position_name = from_atom2c.position_name
+    dist1 = hopping1.distance
+    dist2 = hopping2.distance
+    if np.abs(dist1-dist2)>tolerance:
+        return False, None, None
+    if to_atom1_position_name!=to_atom2c_position_name or from_atom1_position_name!=from_atom2c_position_name:
+        return False, None, None
+
+    # ==============================================================================
+    # STEP 2: Compute hopping vectors in Cartesian coordinates
+    # ==============================================================================
+    # Hopping vector for hopping1: points from neighbor to center
+    # This is the displacement vector of the hopping
+    hopping_vec1 = to_atom1.cart_coord - from_atom1.cart_coord
+    # Hopping vector for conjugate of hopping2
+    # For Hermiticity, this should equal the transformed hopping_vec1
+    hopping_vec2_conj = to_atom2c.cart_coord - from_atom2c.cart_coord
+
+    # ==============================================================================
+    # STEP 3: Search for space group operation relating the two hoppings
+    # ==============================================================================
+    # Iterate through all space group operations to find one that transforms
+    # hopping1 into the conjugate of hopping2
+    for op_idx in range(len(space_group_bilbao_cart)):
+        # Extract rotation R and translation t from space group operation
+        R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+        # ==============================================================================
+        # Check whether R @ hopping_vec1 + t + n0*a0 + n1*a1 + n2*a2 = hopping_vec2_conj
+        # ==============================================================================
+        # Apply rotation to hopping vector
+        transformed_vec = R @ hopping_vec1 + t
+        # Calculate required lattice shift
+        # We need: transformed_vec + n_vec·[a0,a1,a2] = hopping_vec2_conj
+        # Therefore: n_vec·[a0,a1,a2] = hopping_vec2_conj - transformed_vec
+        required_lattice_shift = hopping_vec2_conj - transformed_vec
+        # Check if required_lattice_shift is a lattice vector
+        # (i.e., can be expressed as n0*a0 + n1*a1 + n2*a2 with integer n0, n1, n2)
+        is_lattice, n_vec = is_lattice_vector(
+            required_lattice_shift,
+            lattice_basis,
+            tolerance
+        )
+        print(f"is_lattice={is_lattice}")
+        # ==============================================================================
+        # If lattice vector found, verify and return
+        # ==============================================================================
+        if is_lattice:
+            return True, op_idx, n_vec.astype(int)
+
+    # ==============================================================================
+    # No Hermitian relationship found
+    # ==============================================================================
+    return False, None, None
+
+
+
+
 lattice_basis = np.array(parsed_config['lattice_basis'])
 type_linear="linear"
 type_hermitian="hermitian"
@@ -1817,7 +2542,30 @@ equivalence_classes_center_atom_0 = get_equivalent_sets_for_one_center_atom(0, u
                                                                                     space_group_bilbao_cart,
                                                                                     identity_idx)
 
+ind4=6
+ind5=5
+eq_class_4=equivalence_classes_center_atom_0[ind4]
+eq_class_5=equivalence_classes_center_atom_0[ind5]
 
-ind=3
-print(len(equivalence_classes_center_atom_0[ind]))
-print(equivalence_classes_center_atom_0[ind])
+atom_class_4_ref=eq_class_4[0][0]
+atom_class_5_ref=eq_class_5[0][0]
+
+vec_atom4_to_atom0=atom0.cart_coord-atom_class_4_ref.cart_coord
+vec_atom5_to_atom0=atom0.cart_coord-atom_class_5_ref.cart_coord
+
+hopping_class4=equivalent_class_to_hoppings(eq_class_4,atom0,space_group_bilbao_cart, identity_idx)
+
+hopping_class5=equivalent_class_to_hoppings(eq_class_5,atom0,space_group_bilbao_cart, identity_idx)
+
+root4=one_equivalent_hopping_class_to_root(hopping_class4,identity_idx, type_linear)
+root5=one_equivalent_hopping_class_to_root(hopping_class5,identity_idx, type_linear)
+#
+is_hermitian,op_idx_hermitian,n_vec_hermitian=check_hopping_hermitian(root4.hopping,root5.hopping, space_group_bilbao_cart,
+                            lattice_basis)
+is_linear,op_idx_lin,n_vec_lin=check_hopping_linear(root4.hopping,root5.hopping, space_group_bilbao_cart,
+                            lattice_basis)
+
+print(f"is_linear={is_linear}, op_idx_lin={op_idx_lin}, n_vec_lin={n_vec_lin}")
+print(f"is_hermitian={is_hermitian}, op_idx_hermitian={op_idx_hermitian}, n_vec_hermitian={n_vec_hermitian}")
+print_tree(root4)
+print_tree(root5)
