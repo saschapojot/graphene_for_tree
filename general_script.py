@@ -3142,7 +3142,7 @@ type_hermitian="hermitian"
 
 
 roots_from_eq_class=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbors,space_group_bilbao_cart,identity_idx,type_linear,True)
-print_all_trees(roots_from_eq_class)
+# print_all_trees(roots_from_eq_class)
 
 #########################find linear first, hermitian second
 roots_grafted_linear=tree_grafting_linear(roots_from_eq_class,
