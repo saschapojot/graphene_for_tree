@@ -3133,6 +3133,349 @@ def tree_grafting_linear(roots_all,space_group_bilbao_cart,lattice_basis,type_li
 
     return roots_grafted_linear
 
+def create_hopping_matrix(root, tree_idx):
+    """
+    Create a symbolic hopping matrix for a root's hopping
+    Args:
+        root:  vertex object containing the hopping
+        tree_idx:  tree number/index
+
+    Returns:
+        sympy.Matrix: Hopping matrix with symbolic elements T^{tree_idx}_{i,j}
+    """
+
+    hopping_root = root.hopping
+    # Get orbitals directly from atom objects
+    to_orbitals =hopping_root.to_atom.get_orbital_names()
+    from_orbitals=hopping_root.from_atom.get_orbital_names()
+
+    # print(f"to_orbitals={to_orbitals}")
+    # print(f"from_orbitals={from_orbitals}")
+    # Get dimensions
+    n_to = len(to_orbitals)
+    n_from = len(from_orbitals)
+    # Create symbolic matrix
+    T = sp.zeros(n_to, n_from)
+    # Fill with symbolic elements
+    for i, to_orb in enumerate(to_orbitals):
+        for j, from_orb in enumerate(from_orbitals):
+            symbol_name = f"T^{{{tree_idx}}}_{{{to_orb},{from_orb}}}"
+            T[i, j] = sp.Symbol(symbol_name)
+
+    return T
+
+def find_root_stabilizer(root,lattice_basis,space_group_bilbao_cart,tolerance=1e-5):
+    """Find stabilizer operations for a hopping root"""
+
+    to_atom = root.hopping.to_atom
+    from_atom = root.hopping.from_atom
+
+    to_atom_cart_coord = to_atom.cart_coord
+    from_atom_cart_coord = from_atom.cart_coord
+
+    # Get lattice basis vectors
+    a0, a1, a2 = lattice_basis
+    lattice_matrix = np.column_stack([a0, a1, a2])
+    root_stabilizer = []
+    for op_idx, group_mat in enumerate(space_group_bilbao_cart):
+        R,t=get_rotation_translation(space_group_bilbao_cart,op_idx)
+        # Apply symmetry operation to both atoms
+        to_atom_transformed = R @ to_atom_cart_coord + t
+        from_atom_transformed = R @ from_atom_cart_coord + t
+
+        # Compute difference vectors
+        diff_to = to_atom_transformed - to_atom_cart_coord
+        diff_from = from_atom_transformed - from_atom_cart_coord
+
+        # Check if both differences are the SAME lattice vector
+        diff = diff_to - diff_from
+        if np.linalg.norm(diff) < tolerance:
+            # Both atoms translated by same lattice vector
+            # Verify it's actually a lattice vector
+            n_vector = np.linalg.solve(lattice_matrix, diff_to)
+            n_rounded = np.round(n_vector)
+            if np.allclose(n_vector, n_rounded, atol=tolerance):
+                root_stabilizer.append(op_idx)
+            else:
+                continue
+    return root_stabilizer
+
+def get_stabilizer_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart,tolerance=1e-5):
+    """
+    Get all constraint equations from stabilizer operations for a root's hopping matrix.
+    Args:
+        root:
+        tree_idx:
+
+    Returns:
+        dict: Contains 'T', 'constraints', 'equations'
+    """
+    # Create hopping matrix
+    T=create_hopping_matrix(root,tree_idx)
+
+    # Get stabilizer operations
+    root_stabilizer = list(find_root_stabilizer(root,lattice_basis,space_group_bilbao_cart,tolerance))
+
+    # Get atom information
+    root_to_atom = root.hopping.to_atom
+    root_from_atom = root.hopping.from_atom
+
+    # Store all constraints
+    all_constraints = []
+    all_equations = []
+    for stab_id, op_id in enumerate(root_stabilizer):
+        # Get representation matrices directly from atoms
+        V_to = root_to_atom.get_sympy_representation_matrix(op_id)
+        V_from = root_from_atom.get_sympy_representation_matrix(op_id)
+        # Compute transformed T: V_to * T * V_from^†
+        transformed_T = V_to @ T @ V_from.H
+        # Compute difference
+        diff_T = T - transformed_T
+        diff_T_simplified = sp.simplify(diff_T)
+        # Extract non-zero equations
+        equations = []
+        for i in range(diff_T.shape[0]):
+            for j in range(diff_T.shape[1]):
+                if diff_T_simplified[i, j] != 0:
+                    equations.append({
+                        'element': (i, j),
+                        'equation': diff_T_simplified[i, j]
+                    })
+
+        all_constraints.append({
+            'op_id': op_id,
+            'stab_id': stab_id,
+            'V_to': root_to_atom.get_representation_matrix(op_id),
+            'V_from': root_from_atom.get_representation_matrix(op_id),
+            'diff_T': diff_T_simplified,
+            'equations': equations
+        })
+        all_equations.extend(equations)
+    return {
+        'T': T,
+        'root_stabilizer': root_stabilizer,
+        'constraints': all_constraints,
+        'all_equations': all_equations
+    }
+
+def are_equivalent_equations(eq1, eq2):
+    """Check if two equations are mathematically equivalent"""
+    return sp.simplify(eq1 - eq2) == 0
+
+def get_unique_equations(all_equations):
+    """Extract unique equations from a list of equation dictionaries"""
+    unique_eqs = []
+    for eq in all_equations:
+        canonical = sp.simplify(eq['equation'])
+        if not any(are_equivalent_equations(canonical, existing) for existing in unique_eqs):
+            unique_eqs.append(canonical)
+    return unique_eqs
+
+def equations_to_matrix_form(equations, tolerance=1e-5):
+    """
+    Convert a list of linear equations to matrix form Ax = 0
+
+    Args:
+        equations: list of sympy expressions
+        tolerance: numerical tolerance for treating values as zero
+
+    Returns:
+        A: coefficient matrix (sympy.Matrix)
+        x: vector of variables (sympy.Matrix)
+        symbols: list of all unique symbols
+    """
+    # Collect all unique symbols
+    all_symbols = set()
+    for eq in equations:
+        all_symbols.update(eq.free_symbols)
+
+    sorted_symbols = sorted(all_symbols, key=lambda s: str(s))
+    # Create coefficient matrix
+    n_equations = len(equations)
+    n_variables = len(sorted_symbols)
+    A = sp.zeros(n_equations, n_variables)
+    for i, eq in enumerate(equations):
+        eq_expanded = sp.expand(eq)
+        for j, symbol in enumerate(sorted_symbols):
+            coeff = eq_expanded.coeff(symbol)
+            coeff_val = sp.Float(coeff)
+            if np.abs(coeff_val) < tolerance:
+                coeff_val = 0.0
+            A[i, j] = coeff_val
+
+    A = sp.Matrix(A)
+    x = sp.Matrix(sorted_symbols)
+    return A, x, sorted_symbols
+
+def get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=1e-5):
+    """Express dependent variables in terms of free variables"""
+    # 1. Identify Free Variables
+    free_var_indices = [i for i in range(len(symbols)) if i not in pivot_cols]
+    dependent_expressions = {}
+    # 2. Iterate through Pivot Columns (Dependent Variables)
+    for row_idx, col_idx in enumerate(pivot_cols):
+        if row_idx < A_rref.shape[0]:
+            dependent_var = symbols[col_idx]
+            expr_terms = []
+            # 3. Build the Expression
+            for free_idx in free_var_indices:
+                # Move free variable term to the RHS (multiply by -1)
+                coeff = -A_rref[row_idx, free_idx]
+                coeff_val =sp.Float(coeff)
+                # Check tolerance to avoid numerical noise
+                if abs(coeff_val) >= tolerance:
+                    coeff = sp.Float(coeff_val, precision=-int(np.log10(tolerance)))
+                    expr_terms.append(coeff * symbols[free_idx])
+            # 4. Sum terms or set to zero
+            if expr_terms:
+                expression = sum(expr_terms)
+            else:
+                expression = sp.Integer(0)
+
+            dependent_expressions[dependent_var] = expression
+    return dependent_expressions
+
+def reconstruct_hopping_matrix(T_original, dependent_expressions):
+    """Reconstruct hopping matrix with only free variables"""
+    T_reconstructed = T_original.copy()
+
+    for dep_var, expr in dependent_expressions.items():
+        T_reconstructed = T_reconstructed.subs(dep_var, expr)
+
+    return T_reconstructed
+
+
+def analyze_tree_constraints(root, tree_idx,lattice_basis,space_group_bilbao_cart, tolerance=1e-5):
+    """
+    Complete constraint analysis for a single tree
+    Args:
+        root:
+        parsed_config:
+        tree_idx:
+        tolerance:
+
+    Returns:
+
+    """
+    # Get stabilizer constraints
+    root_stab_result = get_stabilizer_constraints(root, tree_idx,lattice_basis,space_group_bilbao_cart,tolerance)
+    print(f"len(root_stab_result[all_equations])={len(root_stab_result["all_equations"])}")
+    # Get unique equations
+    unique_eqs = get_unique_equations(root_stab_result['all_equations'])
+    print(f"len(unique_eqs)={len(unique_eqs)}")
+    if len(unique_eqs) > 0:
+        A, x, symbols = equations_to_matrix_form(unique_eqs, tolerance=tolerance)
+        # A_cleaned = A.applyfunc(lambda x: 0 if abs(float(x)) < tolerance else x)
+        A_rref, pivot_cols = A.rref()
+        free_var_indices = [i for i in range(len(symbols)) if i not in pivot_cols]
+        dependent_var_indices = list(pivot_cols)
+        dependent_expressions = get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=tolerance)
+        T_reconstructed = reconstruct_hopping_matrix(root_stab_result['T'], dependent_expressions)
+
+        root_stab_result.update({
+            'unique_equations': unique_eqs,
+            'constraint_matrix': A,
+            'constraint_matrix_rref': A_rref,
+            'pivot_cols': pivot_cols,
+            'symbols': symbols,
+            'free_var_indices': free_var_indices,
+            'dependent_var_indices': dependent_var_indices,
+            'dependent_expressions': dependent_expressions,
+            'T_reconstructed': T_reconstructed,
+            'rank': len(pivot_cols),
+            'nullity': len(symbols) - len(pivot_cols)
+        })
+
+    else:
+        total_params = root_stab_result['T'].shape[0] * root_stab_result['T'].shape[1]
+        root_stab_result.update({
+            'unique_equations': [],
+            'constraint_matrix': None,
+            'constraint_matrix_rref': None,
+            'pivot_cols': (),
+            'symbols': [],
+            'free_var_indices': list(range(total_params)),
+            'dependent_var_indices': [],
+            'dependent_expressions': {},
+            'T_reconstructed': root_stab_result['T'].copy(),
+            'rank': 0,
+            'nullity': total_params
+        })
+
+    return root_stab_result
+
+def propagate_T_to_child(parent_vertex, child_vertex,type_linear,type_hermitian, tolerance=1e-5):
+    # Early return if child is None
+    if child_vertex is None:
+        return
+    # Get parent's hopping matrix
+    T_parent = parent_vertex.hopping.T
+    # Get the operation that transforms parent to child
+    op_idx_parent_to_child = child_vertex.hopping.operation_idx
+    # Get representation matrices for parent's atoms under this operation
+    parent_to_atom_V = (parent_vertex.hopping.to_atom.orbital_representations)[op_idx_parent_to_child]
+    parent_from_atom_V = (parent_vertex.hopping.from_atom.orbital_representations)[op_idx_parent_to_child]
+    # Get child type
+    child_type = child_vertex.type
+
+    # Convert to SymPy matrices
+    parent_to_atom_V_sp = sp.Matrix(parent_to_atom_V)
+    parent_from_atom_V_sp = sp.Matrix(parent_from_atom_V)
+    # Apply transformation based on child type
+
+    if child_type == type_linear:
+        T_child = parent_to_atom_V_sp @ T_parent @ parent_from_atom_V_sp.H
+    elif child_type == type_hermitian:
+        T_child = (parent_to_atom_V_sp @ T_parent @ parent_from_atom_V_sp.H).H
+
+    else:
+        raise ValueError(f"Unknown child type: {child_type}")
+
+    # Simplify the result
+    T_child = sp.simplify(T_child)
+    # Assign to child
+    child_vertex.hopping.T = T_child
+
+
+def propagate_to_all_children(parent_vertex, type_linear,type_hermitian, tolerance=1e-5):
+    """
+    Propagate T from parent to all descendants using BFS (breadth-first search)
+    Args:
+        parent_vertex:
+        type_linear:
+        type_hermitian:
+        tolerance:
+
+    Returns:
+
+    """
+    from collections import deque
+    if len(parent_vertex.children) == 0:
+        return
+    # Queue stores tuples: (parent_vertex, child_vertex, level)
+    queue = deque()
+    # Initialize queue with all immediate children (level 1)
+    for child in parent_vertex.children:
+        queue.append((parent_vertex, child, 1))
+    # Track statistics
+    total_propagated = 0
+    max_level = 0
+    # Process queue level-by-level
+    while queue:
+        parent, child, level = queue.popleft()
+        # Propagate T from parent to child
+        propagate_T_to_child(parent, child,type_linear,type_hermitian, tolerance=tolerance)
+        total_propagated += 1
+        max_level = max(max_level, level)
+        # Add all grandchildren to queue (next level)
+        for grandchild in child.children:
+            queue.append((child, grandchild, level + 1))
+
+
+def get_hopping_distance(root):
+    """Calculate the distance for a root's hopping"""
+    hopping = root.hopping
+    return np.linalg.norm(hopping.from_atom.cart_coord - hopping.to_atom.cart_coord)
 
 
 
@@ -3158,8 +3501,25 @@ roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
 
 
 
-print_all_trees(roots_grafted_hermitian)
+all_roots_sorted = sorted(roots_grafted_hermitian, key=get_hopping_distance)
+# print_all_trees(all_roots_sorted)
 
+
+tree_idx =1
+root = all_roots_sorted[tree_idx]
+print_tree(root)
+analysis_result = analyze_tree_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart)
+print("\n" + "=" * 80)
+print("ANALYSIS SUMMARY")
+print("=" * 80)
+print(f"Total parameters in T: {analysis_result['T'].shape[0]} × {analysis_result['T'].shape[1]} = {analysis_result['T'].shape[0] * analysis_result['T'].shape[1]}")
+
+
+
+# CRITICAL: Assign T to root before propagation
+root.hopping.T = analysis_result['T_reconstructed']
+sp.pprint( analysis_result['T_reconstructed'])
+sp.pprint( analysis_result['unique_equations'])
 
 
 # atom0=unit_cell_atoms[0]
