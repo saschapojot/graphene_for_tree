@@ -3502,24 +3502,24 @@ roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
 
 
 all_roots_sorted = sorted(roots_grafted_hermitian, key=get_hopping_distance)
-# print_all_trees(all_roots_sorted)
+print_all_trees(all_roots_sorted)
 
 
 tree_idx =1
 root = all_roots_sorted[tree_idx]
-print_tree(root)
-analysis_result = analyze_tree_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart)
-print("\n" + "=" * 80)
-print("ANALYSIS SUMMARY")
-print("=" * 80)
-print(f"Total parameters in T: {analysis_result['T'].shape[0]} × {analysis_result['T'].shape[1]} = {analysis_result['T'].shape[0] * analysis_result['T'].shape[1]}")
-
-
-
-# CRITICAL: Assign T to root before propagation
-root.hopping.T = analysis_result['T_reconstructed']
-sp.pprint( analysis_result['T_reconstructed'])
-sp.pprint( analysis_result['unique_equations'])
+# print_tree(root)
+# analysis_result = analyze_tree_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart)
+# print("\n" + "=" * 80)
+# print("ANALYSIS SUMMARY")
+# print("=" * 80)
+# print(f"Total parameters in T: {analysis_result['T'].shape[0]} × {analysis_result['T'].shape[1]} = {analysis_result['T'].shape[0] * analysis_result['T'].shape[1]}")
+#
+#
+#
+# # CRITICAL: Assign T to root before propagation
+# root.hopping.T = analysis_result['T_reconstructed']
+# sp.pprint( analysis_result['T_reconstructed'])
+# sp.pprint( analysis_result['unique_equations'])
 
 
 # atom0=unit_cell_atoms[0]
