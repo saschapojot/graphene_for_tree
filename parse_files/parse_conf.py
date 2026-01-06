@@ -133,6 +133,7 @@ def parseConfContents(file):
 
     # Initialize result dictionary with all expected fields
     config = {
+        'config_file_path': os.path.abspath(file),  # Store full absolute path
         'name': '',                    # System name
         'dim': '',                     # Dimensionality (2 or 3)
         'spin': '',                    # Spin consideration (true/false)
