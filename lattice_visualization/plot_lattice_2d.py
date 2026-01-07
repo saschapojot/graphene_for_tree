@@ -294,8 +294,8 @@ def plot_single_root_tree(root_vertex, root_index, parsed_config, unit_cell_atom
     unique_position_names = set(atom.position_name for atom in unit_cell_atoms)
     sorted_position_names = sorted(list(unique_position_names))
     num_unique_positions = len(sorted_position_names)
-    colormap = plt.cm.get_cmap('tab10', num_unique_positions)
-    name_to_color = {name: colormap(i) for i, name in enumerate(sorted_position_names)}
+    hsv_colors = plt.cm.hsv(np.linspace(0, 1, num_unique_positions, endpoint=False))
+    name_to_color = {name: hsv_colors[i] for i, name in enumerate(sorted_position_names)}
 
     xs, ys, plot_colors = [], [], []
 
