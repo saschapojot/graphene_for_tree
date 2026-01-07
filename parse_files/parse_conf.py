@@ -55,7 +55,7 @@ dim_pattern = r"^dim\s*=\s*(\d+)\s*$"
 
 # Pattern for number of neighbor cells to consider
 neighbors_pattern = r"^neighbors\s*=\s*(\d+)\s*$"
-
+truncation_radius_pattern=rf"truncation_radius\s*=\s*({float_pattern})\s*"
 # Pattern for number of Wyckoff position types
 Wyckoff_type_num_pattern = r"^Wyckoff_type_num\s*=\s*(\d+)\s*$"
 
@@ -138,6 +138,7 @@ def parseConfContents(file):
         'dim': '',                     # Dimensionality (2 or 3)
         'spin': '',                    # Spin consideration (true/false)
         'neighbors': '',               # Number of neighbor cells to consider
+        'truncation_radius':'',
         'Wyckoff_type_num': '',          # Total number of Wyckoff position types
         'lattice_type': '',           # Lattice type (primitive/conventional)
         'lattice_basis': '',          # Lattice basis vectors (3x3 matrix)
@@ -185,6 +186,15 @@ def parseConfContents(file):
             if match_neighbors:
                 config['neighbors'] = int(match_neighbors.group(1))
                 continue
+            # ==========================================
+            # Parse truncation radius
+            # ==========================================
+            match_truncation_radius=re.match(truncation_radius_pattern,oneLine)
+            if match_truncation_radius:
+                config['truncation_radius']=float(match_truncation_radius.group(1))
+                continue
+
+
 
             # ==========================================
             # Parse number of Wyckoff types

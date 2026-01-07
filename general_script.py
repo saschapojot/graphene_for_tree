@@ -1297,16 +1297,17 @@ unit_cell_atoms=generate_atoms_in_unit_cell(parsed_config, space_group_bilbao_ca
 # ==============================================================================
 # Define neighbor search parameters
 # ==============================================================================
-search_range=10 # Number of unit cells to search in each direction
-               # Total search region: [-10, 10] × [-10, 10] for this 2d problem
-               # Larger values find more distant neighbors but increase computation time
 
-radius=1.05 * np.sqrt(3) # Cutoff distance in Cartesian coordinates
+# print(f"parsed_config[truncation_radius] ={parsed_config["truncation_radius"]} ")
+radius=parsed_config["truncation_radius"] # Cutoff distance in Cartesian coordinates
                          # Only atoms within this distance from center are considered neighbors
                          # Factor 1.05 provides small tolerance beyond sqrt(3) for numerical safety
                          # FIXME: search_range must be sufficiently large to include all atoms within radius
                          # TODO: may need an algorithm to deal with this in the next version of code
-
+search_range=10 # Number of unit cells to search in each direction
+               # Total search region: [-10, 10] × [-10, 10] for this 2d problem
+               # Larger values find more distant neighbors but increase computation time
+               #TODO: should be computed from a0,a1, radius
 
 search_dim = parsed_config['dim']  # Dimensionality of neighbor search
                 # 1: Search along n0 only (1D chain)
@@ -3509,7 +3510,8 @@ print_all_trees(all_roots_sorted)
 #  Prepare the data package to plot
 data_package_2_plt = {
     "roots": all_roots_sorted,
-    "config": parsed_config
+    "config": parsed_config,
+    "unit_cell_atoms":unit_cell_atoms
 }
 
 #  Serialize (Pickle) and Encode (Base64)

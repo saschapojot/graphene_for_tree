@@ -262,7 +262,7 @@ class hopping:
         self.distance = None  # Euclidean distance between center (to_atom) and neighbor (from_atom)
         self.T = None  # Hopping matrix between orbital basis (sympy Matrix, to be computed)
                        # Represents the tight-binding hopping matrix: center orbitals ← neighbor orbitals
-
+        self.line_type=None # for visualization
     def conjugate(self):
         """
         Return the conjugate (reverse) hopping direction.
@@ -495,6 +495,7 @@ class vertex():
         # - parent: parent's operation index or "None"
         # - children: number of child vertices
         return (f"vertex(type={self.type}, {root_str}, "
+                f"is_root={self.is_root}, "
                 f"op={self.hopping.operation_idx}, "
                 f"parent={parent_str}, "
                 f"children={len(self.children)})")
