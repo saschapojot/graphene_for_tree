@@ -16,7 +16,7 @@ def orbital_to_submatrix(orbitals, Vs, Vp, Vd, Vf):
     full_orbitals = [
         's',
         'px', 'py', 'pz',
-        'dxy', 'dyz', 'dzx', 'd(x2-y2)', 'd(3z2-r2)',
+        'dxy', 'dyz', 'dxz', 'dx2-y2', 'dz2',
         'fz3', 'fxz3', 'fyz3', 'fxyz', 'fz(x2-y2)', 'fx(x2-3y2)', 'fy(3x2-y2)'
     ]
     # Remove leading numbers from orbitals (e.g., '2s' -> 's', '2pz' -> 'pz')

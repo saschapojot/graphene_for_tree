@@ -1059,7 +1059,7 @@ def find_identity_operation(space_group_bilbao_cart, tolerance=1e-9, verbose=Tru
 #                 f"parent={parent_str}, "
 #                 f"children={len(self.children)})")
 
-def is_lattice_vector(vector, lattice_basis, tolerance=1e-5):
+def is_lattice_vector(vector, lattice_basis, tolerance=1e-3):
     """
     Check if a vector can be expressed as an integer linear combination of lattice basis vectors.
 
@@ -1071,7 +1071,7 @@ def is_lattice_vector(vector, lattice_basis, tolerance=1e-5):
         vector: 3D vector to check (Cartesian coordinates)
         lattice_basis: Primitive lattice basis vectors (3×3 array, each row is a basis vector)
                       expressed in Cartesian coordinates using Bilbao origin
-        tolerance: Numerical tolerance for checking if coefficients are integers (default: 1e-5)
+        tolerance: Numerical tolerance for checking if coefficients are integers (default: 1e-3)
 
     Returns:
         tuple: (is_lattice, n_vector)
@@ -1098,7 +1098,7 @@ def is_lattice_vector(vector, lattice_basis, tolerance=1e-5):
 
 
 def check_center_invariant(center_atom, operation_idx, space_group_bilbao_cart,
-                           lattice_basis, tolerance=1e-5, verbose=False):
+                           lattice_basis, tolerance=1e-3, verbose=False):
     """
     Check if a center atom is invariant under a specific space group operation.
 
@@ -1118,7 +1118,7 @@ def check_center_invariant(center_atom, operation_idx, space_group_bilbao_cart,
                                  using Bilbao origin (shape: num_ops × 3 × 4)
         lattice_basis: Primitive lattice basis vectors (3×3 array, each row is a basis vector)
                       expressed in Cartesian coordinates using Bilbao origin
-        tolerance: Numerical tolerance for comparison (default: 1e-5)
+        tolerance: Numerical tolerance for comparison (default: 1e-3)
         verbose: Whether to print debug information (default: False)
 
     Returns:
@@ -1153,7 +1153,7 @@ def check_center_invariant(center_atom, operation_idx, space_group_bilbao_cart,
 # ==============================================================================
 
 def generate_wyckoff_orbit(wyckoff_position, space_group_bilbao_cart, lattice_basis,
-                          tolerance=1e-5, verbose=False):
+                          tolerance=1e-3, verbose=False):
     """
     Generate all symmetry-equivalent positions (orbit) from a single Wyckoff position.
     Applies all space group operations to a Wyckoff position and collects unique
@@ -1176,7 +1176,7 @@ def generate_wyckoff_orbit(wyckoff_position, space_group_bilbao_cart, lattice_ba
                                 using Bilbao origin (shape: num_ops × 3 × 4)
     :param lattice_basis:  Primitive lattice basis vectors (3×3 array, each row is a basis vector)
                       expressed in Cartesian coordinates using Bilbao origin
-    :param tolerance: Numerical tolerance for identifying duplicate positions (default: 1e-5)
+    :param tolerance: Numerical tolerance for identifying duplicate positions (default: 1e-3)
     :param verbose: Whether to print debug information (default: False)
     :return: list of dicts: Each dict contains:
             - 'fractional_coordinates': [f0, f1, f2] in range [0, 1)
@@ -1245,7 +1245,7 @@ def generate_wyckoff_orbit(wyckoff_position, space_group_bilbao_cart, lattice_ba
 
 
 def generate_atoms_in_unit_cell(parsed_config,space_group_bilbao_cart, lattice_basis,origin_cart,repr_s, repr_p, repr_d, repr_f,
-                          tolerance=1e-5):
+                          tolerance=1e-3):
     """
     Generates all atoms in the unit cell by expanding the Wyckoff positions defined
     in the configuration using the provided space group operations.
@@ -1371,7 +1371,7 @@ for i, unit_atom in enumerate(unit_cell_atoms):
 
 identity_idx = find_identity_operation(
     space_group_bilbao_cart,# List of space group operations in Cartesian coordinates
-    tolerance=1e-5, # Numerical tolerance for comparing matrices to identity
+    tolerance=1e-3, # Numerical tolerance for comparing matrices to identity
     verbose=True# Print status message when identity is found
 )
 # print(f"identity_idx={identity_idx}")
@@ -1561,7 +1561,7 @@ def bilbao_plus_translation(R,t,lattice_basis,n_vec,atom_cart):
 
 
 def get_next_for_center(center_atom, seed_atom, center_seed_distance, space_group_bilbao_cart,
-                        operation_idx, parsed_config, tolerance=1e-5, verbose=False):
+                        operation_idx, parsed_config, tolerance=1e-3, verbose=False):
     """
      Apply a space group operation to a seed atom, conditioned on center atom invariance.
      This function implements a three-step validation process:
@@ -1586,7 +1586,7 @@ def get_next_for_center(center_atom, seed_atom, center_seed_distance, space_grou
                                 using Bilbao origin (shape: num_ops × 3 × 4)
         operation_idx: Index of the space group operation to apply
         parsed_config: Configuration dictionary containing lattice_basis
-        tolerance: Numerical tolerance for invariance and distance checks (default: 1e-5)
+        tolerance: Numerical tolerance for invariance and distance checks (default: 1e-3)
         verbose: Whether to print debug information (default: False)
         Returns:
             numpy.ndarray or None:
@@ -1677,7 +1677,7 @@ def get_next_for_center(center_atom, seed_atom, center_seed_distance, space_grou
         return None
 
 
-def search_one_equivalent_atom(seed_atom,target_cart_coord, neighbor_atoms_copy, tolerance=1e-5, verbose=False):
+def search_one_equivalent_atom(seed_atom,target_cart_coord, neighbor_atoms_copy, tolerance=1e-3, verbose=False):
     """
     Search for an atom in the neighbor_atoms_copy set whose Cartesian coordinate matches the target.
     This function is used to find which actual neighbor atom corresponds to a transformed
@@ -1689,7 +1689,7 @@ def search_one_equivalent_atom(seed_atom,target_cart_coord, neighbor_atoms_copy,
                             to a seed atom's position
         neighbor_atoms:  set of atomIndex objects representing all neighbors
                          of a center atom within some cutoff radius
-        tolerance:  Numerical tolerance for coordinate comparison (default: 1e-5)
+        tolerance:  Numerical tolerance for coordinate comparison (default: 1e-3)
                     Two positions are considered identical if their Euclidean distance
                     is less than this tolerance
         verbose:  Whether to print debug information (default: False)
@@ -1715,7 +1715,7 @@ def search_one_equivalent_atom(seed_atom,target_cart_coord, neighbor_atoms_copy,
 
 def get_equivalent_sets_for_one_center_atom(center_atom_idx, unit_cell_atoms, all_neighbors,
                                                 space_group_bilbao_cart, identity_idx,
-                                                tolerance=1e-5, verbose=False):
+                                                tolerance=1e-3, verbose=False):
     """
     Partition all neighbors of 1 center atom into equivalence classes based on symmetry.
     Each equivalence class contains center atom's neighbors related by space group operations.
@@ -1750,7 +1750,7 @@ def get_equivalent_sets_for_one_center_atom(center_atom_idx, unit_cell_atoms, al
         all_neighbors: Dictionary mapping center atom index → list of neighbor atomIndex objects
         space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
         identity_idx: Index of the identity operation
-        tolerance: Numerical tolerance for comparisons (default: 1e-5)
+        tolerance: Numerical tolerance for comparisons (default: 1e-3)
         verbose: Whether to print debug information (default: False)
     Returns:
         List of equivalence classes, where each class is a list of tuples:
@@ -2112,7 +2112,7 @@ def one_equivalent_hopping_class_to_root(one_equivalent_hopping_class, identity_
 
 
 
-def atom_equal(atom1, atom2,tolerence=1e-5):
+def atom_equal(atom1, atom2,tolerence=1e-3):
     """
     check if two atoms occupy the same position
     Args:
@@ -2128,7 +2128,7 @@ def atom_equal(atom1, atom2,tolerence=1e-5):
     else:
         return False
 
-def apply_full_transformation_and_check_position(atom1,atom2,R,t,lattice_basis,n_vec,tolerance=1e-5):
+def apply_full_transformation_and_check_position(atom1,atom2,R,t,lattice_basis,n_vec,tolerance=1e-3):
     #checks if full transformation applied to atoms goes to atom2
     atom1_pos=atom1.cart_coord
     atom2_pos=atom2.cart_coord
@@ -2141,7 +2141,7 @@ def apply_full_transformation_and_check_position(atom1,atom2,R,t,lattice_basis,n
         return False
 
 def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
-                            lattice_basis, tolerance=1e-5, verbose=False):
+                            lattice_basis, tolerance=1e-3, verbose=False):
     """
      Check if hopping2 is related to hopping1 by a space group symmetry operation.
      For tight-binding models, a linear symmetry constraint implies:
@@ -2171,7 +2171,7 @@ def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
         hopping2: Second hopping object (candidate symmetry equivalent)
         space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
         lattice_basis: Primitive lattice basis vectors (3×3 array), each row is a basis vector
-        tolerance: Numerical tolerance for comparison (default: 1e-5)
+        tolerance: Numerical tolerance for comparison (default: 1e-3)
         verbose: Whether to print debug information (default: False)
 
     Returns:
@@ -2287,7 +2287,7 @@ def check_hopping_linear(hopping1,hopping2, space_group_bilbao_cart,
 
 
 def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
-                            lattice_basis, tolerance=1e-5, verbose=False):
+                            lattice_basis, tolerance=1e-3, verbose=False):
     """
     Check if hopping2 is the Hermitian conjugate of hopping1.
     For tight-binding models, Hermiticity requires:
@@ -2313,7 +2313,7 @@ def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
                                 using Bilbao origin (shape: num_ops × 3 × 4)
         lattice_basis: Primitive lattice basis vectors (3×3 array, each row is a basis vector)
                       expressed in Cartesian coordinates using Bilbao origin
-        tolerance: Numerical tolerance for comparison (default: 1e-5)
+        tolerance: Numerical tolerance for comparison (default: 1e-3)
         verbose: Whether to print debug information (default: False)
 
     Returns:
@@ -2420,7 +2420,7 @@ def check_hopping_hermitian(hopping1, hopping2, space_group_bilbao_cart,
 
 
 def add_to_root_hermitian(root1, root2, space_group_bilbao_cart,
-                          lattice_basis, type_hermitian, tolerance=1e-5, verbose=False):
+                          lattice_basis, type_hermitian, tolerance=1e-3, verbose=False):
     """
     If root2's hopping is hermitian conjugate of root1's hopping,
     add root2 as root1's child with hermitian constraint.
@@ -2434,7 +2434,7 @@ def add_to_root_hermitian(root1, root2, space_group_bilbao_cart,
         space_group_bilbao_cart: List of space group matrices in Cartesian coordinates
         lattice_basis: Primitive lattice basis vectors (3×3 array)
         type_hermitian: String identifier for hermitian constraint type (e.g., "hermitian")
-        tolerance: Numerical tolerance for comparison (default: 1e-5)
+        tolerance: Numerical tolerance for comparison (default: 1e-3)
         verbose: Whether to print debug information (default: False)
 
     Returns:
@@ -2466,7 +2466,7 @@ def add_to_root_hermitian(root1, root2, space_group_bilbao_cart,
         return False
 
 def add_to_root_linear(root1, root2, space_group_bilbao_cart,
-                          lattice_basis, type_linear, tolerance=1e-5, verbose=False):
+                          lattice_basis, type_linear, tolerance=1e-3, verbose=False):
     """
     Attempt to graft root2 onto root1 as a linear child if a symmetry relationship exists.
      This function checks if root2's hopping can be generated from root1's hopping
@@ -2485,7 +2485,7 @@ def add_to_root_linear(root1, root2, space_group_bilbao_cart,
         space_group_bilbao_cart: List of space group matrices in Cartesian coordinates.
         lattice_basis: Primitive lattice basis vectors (3×3 array), each row is a basis vector
         type_linear: String identifier for linear constraint type, value: "linear".
-        tolerance: Numerical tolerance for comparison (default: 1e-5).
+        tolerance: Numerical tolerance for comparison (default: 1e-3).
         verbose: Whether to print debug information (default: False).
 
     Returns:
@@ -2808,7 +2808,7 @@ def generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbors,space_group_b
 
     return roots_all
 
-def grafting_to_existing_hermitian(roots_grafted_hermitian,root_to_be_grafted,space_group_bilbao_cart,lattice_basis,type_hermitian,tolerance=1e-5, verbose=False):
+def grafting_to_existing_hermitian(roots_grafted_hermitian,root_to_be_grafted,space_group_bilbao_cart,lattice_basis,type_hermitian,tolerance=1e-3, verbose=False):
     """
     Attempt to graft a new tree onto an existing collection of trees, the tree's root is hermitian child
 
@@ -2847,7 +2847,7 @@ def grafting_to_existing_hermitian(roots_grafted_hermitian,root_to_be_grafted,sp
         space_group_bilbao_cart (list):  Space group operations in Cartesian coordinates.
         lattice_basis (np.ndarray): Primitive lattice basis vectors.
         type_hermitian (str): String identifier for Hermitian constraint type ("hermitian").
-        tolerance (float): Numerical tolerance for comparisons (default: 1e-5).
+        tolerance (float): Numerical tolerance for comparisons (default: 1e-3).
         verbose (bool): Print detailed diagnostics (default: False).
 
     Returns:
@@ -2880,7 +2880,7 @@ def grafting_to_existing_hermitian(roots_grafted_hermitian,root_to_be_grafted,sp
     # If we finish the loop without returning, no Hermitian relationship was found
     return False
 
-def tree_grafting_hermitian(roots_all,space_group_bilbao_cart,lattice_basis,type_hermitian,tolerance=1e-5, verbose=False):
+def tree_grafting_hermitian(roots_all,space_group_bilbao_cart,lattice_basis,type_hermitian,tolerance=1e-3, verbose=False):
     """
     Perform Hermitian tree grafting on all constraint trees.
     This function implements the 3rd major symmetry constraint: Hermiticity (H† = H).
@@ -2934,7 +2934,7 @@ def tree_grafting_hermitian(roots_all,space_group_bilbao_cart,lattice_basis,type
                               value: "hermitian".
                               This label is assigned to grafted hermitian roots.
         tolerance (float, optional): Numerical tolerance for coordinate and distance
-                                     comparisons. Default: 1e-5
+                                     comparisons. Default: 1e-3
         verbose (bool, optional): Print detailed diagnostics for debugging.
                                   Default: False
 
@@ -2993,7 +2993,7 @@ def tree_grafting_hermitian(roots_all,space_group_bilbao_cart,lattice_basis,type
     return roots_grafted_hermitian
 
 
-def grafting_to_existing_linear(roots_grafted_linear,root_to_be_grafted,space_group_bilbao_cart,lattice_basis,type_linear,tolerance=1e-5, verbose=False):
+def grafting_to_existing_linear(roots_grafted_linear,root_to_be_grafted,space_group_bilbao_cart,lattice_basis,type_linear,tolerance=1e-3, verbose=False):
     """
     Attempt to graft a new tree onto an existing collection of  trees, as linear child
     This function checks if `root_to_be_grafted` is related by a space group symmetry
@@ -3030,7 +3030,7 @@ def grafting_to_existing_linear(roots_grafted_linear,root_to_be_grafted,space_gr
         space_group_bilbao_cart (list): Space group operations in Cartesian coordinates.
         lattice_basis (np.ndarray): Primitive lattice basis vectors.
         type_linear (str): String identifier for linear constraint type ("linear").
-        tolerance: Numerical tolerance for comparisons (default: 1e-5).
+        tolerance: Numerical tolerance for comparisons (default: 1e-3).
         verbose: Print detailed diagnostics (default: False).
 
     Returns:
@@ -3059,7 +3059,7 @@ def grafting_to_existing_linear(roots_grafted_linear,root_to_be_grafted,space_gr
     return False
 
 
-def tree_grafting_linear(roots_all,space_group_bilbao_cart,lattice_basis,type_linear,tolerance=1e-5, verbose=False):
+def tree_grafting_linear(roots_all,space_group_bilbao_cart,lattice_basis,type_linear,tolerance=1e-3, verbose=False):
     """
     Perform Linear tree grafting on all constraint trees.
      This function implements a symmetry reduction step based on linear constraint. It iterates through
@@ -3098,7 +3098,7 @@ def tree_grafting_linear(roots_all,space_group_bilbao_cart,lattice_basis,type_li
         space_group_bilbao_cart (list): Space group operations in Cartesian coordinates.
         lattice_basis (np.ndarray): Primitive lattice basis vectors.
         type_linear (str): String identifier for linear constraint type ("linear").
-        tolerance (float): Numerical tolerance for comparisons (default: 1e-5).
+        tolerance (float): Numerical tolerance for comparisons (default: 1e-3).
         verbose (bool): Print detailed diagnostics (default: False).
 
     Returns:
@@ -3167,7 +3167,7 @@ def create_hopping_matrix(root, tree_idx):
 
     return T
 
-def find_root_stabilizer(root,lattice_basis,space_group_bilbao_cart,tolerance=1e-5):
+def find_root_stabilizer(root,lattice_basis,space_group_bilbao_cart,tolerance=1e-3):
     """Find stabilizer operations for a hopping root"""
 
     to_atom = root.hopping.to_atom
@@ -3203,7 +3203,7 @@ def find_root_stabilizer(root,lattice_basis,space_group_bilbao_cart,tolerance=1e
                 continue
     return root_stabilizer
 
-def get_stabilizer_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart,tolerance=1e-5):
+def get_stabilizer_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart,tolerance=1e-3):
     """
     Get all constraint equations from stabilizer operations for a root's hopping matrix.
     Args:
@@ -3274,7 +3274,7 @@ def get_unique_equations(all_equations):
             unique_eqs.append(canonical)
     return unique_eqs
 
-def equations_to_matrix_form(equations, tolerance=1e-5):
+def equations_to_matrix_form(equations, tolerance=1e-3):
     """
     Convert a list of linear equations to matrix form Ax = 0
 
@@ -3310,7 +3310,7 @@ def equations_to_matrix_form(equations, tolerance=1e-5):
     x = sp.Matrix(sorted_symbols)
     return A, x, sorted_symbols
 
-def get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=1e-5):
+def get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=1e-3):
     """Express dependent variables in terms of free variables"""
     # 1. Identify Free Variables
     free_var_indices = [i for i in range(len(symbols)) if i not in pivot_cols]
@@ -3348,7 +3348,7 @@ def reconstruct_hopping_matrix(T_original, dependent_expressions):
     return T_reconstructed
 
 
-def analyze_tree_constraints(root, tree_idx,lattice_basis,space_group_bilbao_cart, tolerance=1e-5):
+def analyze_tree_constraints(root, tree_idx,lattice_basis,space_group_bilbao_cart, tolerance=1e-3):
     """
     Complete constraint analysis for a single tree
     Args:
@@ -3407,7 +3407,7 @@ def analyze_tree_constraints(root, tree_idx,lattice_basis,space_group_bilbao_car
 
     return root_stab_result
 
-def propagate_T_to_child(parent_vertex, child_vertex,type_linear,type_hermitian, tolerance=1e-5):
+def propagate_T_to_child(parent_vertex, child_vertex,type_linear,type_hermitian, tolerance=1e-3):
     # Early return if child is None
     if child_vertex is None:
         return
@@ -3440,7 +3440,7 @@ def propagate_T_to_child(parent_vertex, child_vertex,type_linear,type_hermitian,
     child_vertex.hopping.T = T_child
 
 
-def propagate_to_all_children(parent_vertex, type_linear,type_hermitian, tolerance=1e-5):
+def propagate_to_all_children(parent_vertex, type_linear,type_hermitian, tolerance=1e-3):
     """
     Propagate T from parent to all descendants using BFS (breadth-first search)
     Args:
@@ -3486,7 +3486,7 @@ lattice_basis = np.array(parsed_config['lattice_basis'])
 type_linear="linear"
 type_hermitian="hermitian"
 
-
+tol=1e-3
 roots_from_eq_class=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbors,space_group_bilbao_cart,identity_idx,type_linear,True)
 # print_all_trees(roots_from_eq_class)
 
