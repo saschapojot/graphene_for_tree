@@ -3541,8 +3541,21 @@ try:
         print("Visualization script finished successfully.")
         print("Output:")
         print(viz_result.stdout)
-
-
+    viz_result_3d_view=subprocess.run(
+        ["python3", "./lattice_visualization/plot_lattice_2d_view_3d.py"],
+        input=encoded_data_2_plt,
+        capture_output=True,
+        text=True
+        )
+    #  Check results
+    if viz_result_3d_view.returncode != 0:
+        print("Visualization script failed!")
+        print("Error output:")
+        print(viz_result_3d_view.stderr)
+    else:
+        print("Visualization script finished successfully.")
+        print("Output:")
+        print(viz_result_3d_view.stdout)
 except Exception as e:
     print(f"Error preparing data for visualization: {e}")
 

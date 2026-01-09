@@ -134,9 +134,9 @@ def get_real_coords(atom_idx_obj, a0, a1, a2):
     """
     Computes the real-space 3D coordinates (x, y, z) for an atomIndex object.
     """
-    n0, n1 = atom_idx_obj.n0, atom_idx_obj.n1
+    n0, n1, n2 = atom_idx_obj.n0, atom_idx_obj.n1, atom_idx_obj.n2
     f0, f1, f2 = atom_idx_obj.frac_coord
-    pos_vec = (n0 + f0) * a0 + (n1 + f1) * a1 + f2 * a2
+    pos_vec = (n0 + f0) * a0 + (n1 + f1) * a1 + (n2 + f2) * a2
     return pos_vec[0], pos_vec[1], pos_vec[2]
 
 
