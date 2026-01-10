@@ -4,11 +4,9 @@ import pickle
 import base64
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
+
 from pathlib import Path
-from matplotlib.patches import FancyArrowPatch, Circle
-import matplotlib.lines as mlines
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -145,7 +143,100 @@ def get_real_coords(atom_idx_obj, a0, a1, a2):
     return pos_vec[0], pos_vec[1], pos_vec[2]
 
 
+def plot_single_root_tree(root_vertex, root_index, parsed_config, unit_cell_atoms, output_dir, grid_params):
+    # Unpack grid parameters
+    n0_range = grid_params['n0_range']
+    n1_range = grid_params['n1_range']
+    n0_min, n0_max = grid_params['n0_min'], grid_params['n0_max']
+    n1_min, n1_max = grid_params['n1_min'], grid_params['n1_max']
 
+    # Setup Lattice Basis
+    lattice_basis = np.array(parsed_config["lattice_basis"])
+    a0, a1, a2 = lattice_basis
+    truncation_radius = parsed_config["truncation_radius"]
+    fig = plt.figure(figsize=(12, 10))
+    ax = fig.add_subplot(111, projection='3d')
+
+
+    # Enable grid FIRST
+    ax.grid(True)
+    # THEN make grid lines on all planes very dim (increase alpha to be more visible)
+    ax.xaxis._axinfo["grid"].update({"color": (0.5, 0.5, 0.5, 0.2), "linewidth": 0.5})
+    ax.yaxis._axinfo["grid"].update({"color": (0.5, 0.5, 0.5, 0.2), "linewidth": 0.5})
+    ax.zaxis._axinfo["grid"].update({"color": (0.5, 0.5, 0.5, 0.2), "linewidth": 0.5})
+
+    #plot lattice lines along a0 direction
+    for n1 in range(n1_min,n1_max+1):
+        starting_point=n1*a1+n0_min*a0
+        ending_point=n1*a1+n0_max*a0
+        x_start,y_start,z_start=starting_point
+        x_end,y_end,z_end=ending_point
+
+        x_vec=[x_start,x_end]
+        y_vec=[y_start,y_end]
+        z_vec=[z_start,z_end]
+
+        ax.plot3D(x_vec, y_vec, z_vec, color='black', linewidth=1, linestyle='-')
+    #plot lattice along a1 direction
+    for n0 in range(n0_min,n0_max+1):
+        starting_point=n0*a0+n1_min*a1
+        ending_point=n0*a0+n1_max*a1
+        x_start, y_start, z_start = starting_point
+        x_end, y_end, z_end = ending_point
+
+        x_vec = [x_start, x_end]
+        y_vec = [y_start, y_end]
+        z_vec = [z_start, z_end]
+        ax.plot3D(x_vec, y_vec, z_vec, color='black', linewidth=1, linestyle='-')
+
+    # Draw Atoms
+    unique_position_names = set(atom.position_name for atom in unit_cell_atoms)
+    sorted_position_names = sorted(list(unique_position_names))
+    num_unique_positions = len(sorted_position_names)
+    hsv_colors = plt.cm.hsv(np.linspace(0, 1, num_unique_positions, endpoint=False))
+    name_to_color = {name: hsv_colors[i] for i, name in enumerate(sorted_position_names)}
+
+
+    # Plot each atom type separately to create legend entries
+    for position_name in sorted_position_names:
+        x_atoms, y_atoms, z_atoms = [], [], []
+        # Populate atoms for this specific atom type
+        for n0 in n0_range[:-1]:
+            for n1 in n1_range[:-1]:
+                for atom in unit_cell_atoms:
+                    if atom.position_name == position_name:
+                        f0, f1, f2 = atom.frac_coord
+                        pos = (n0 + f0) * a0 + (n1 + f1) * a1 + f2 * a2
+                        x_atoms.append(pos[0])
+                        y_atoms.append(pos[1])
+                        z_atoms.append(pos[2])
+
+        # Plot this atom type with its label
+        ax.scatter3D(x_atoms, y_atoms, z_atoms,
+                     c=[name_to_color[position_name]],
+                     s=40,
+                     edgecolors='black',
+                     zorder=10,
+                     label=position_name)  # This creates the legend entry
+
+
+    ax.view_init(elev=30, azim=45)  # Adjust to your preference
+
+    # Set labels
+    ax.set_xlabel('x', fontsize=12)
+    ax.set_ylabel('y', fontsize=12)
+    ax.set_zlabel('z', fontsize=12)
+    ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
+
+    # ax.set_zlim(-10, 10)  # Set z-axis limits
+
+    # Save Plot
+    filename = f"lattice_grid_tree_{root_index}.png"
+    output_file = os.path.join(output_dir, filename)
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    print(f"Plot saved to: {output_file}")
+    # plt.show()
+    plt.close(fig)
 
 
 # ==============================================================================
@@ -213,70 +304,28 @@ output_dir = str(config_dir) + "/tree_visualization_3d_view/"
 Path(output_dir).mkdir(parents=True, exist_ok=True)
 
 
-# 4. Setup lattice basis
-lattice_basis = np.array(parsed_config["lattice_basis"])
-a0, a1, a2 = lattice_basis
 
-fig = plt.figure(figsize=(12, 10))
-ax = fig.add_subplot(111, projection='3d')
+# 4. Iterate and Plot
+print(f"\nGenerating plots for {len(all_roots_sorted)} trees...")
+for i, root in enumerate(all_roots_sorted):
+    # Only plot if it is a root (though input should be roots)
+    if root.is_root:
+        plot_single_root_tree(root, i, parsed_config, unit_cell_atoms, output_dir, grid_params)
+    else:
+        print(f"Skipping index {i} as it is not a root vertex.")
 
-# Determine the extent of the xy plane based on grid parameters
-# We'll make it slightly larger than the data range
-plane_x_min = min_n0_val * np.linalg.norm(a0) * 1.2
-plane_x_max = max_n0_val * np.linalg.norm(a0) * 1.2
-plane_y_min = min_n1_val * np.linalg.norm(a1) * 1.2
-plane_y_max = max_n1_val * np.linalg.norm(a1) * 1.2
-
-# Create a mesh for the xy plane at z=0
-xx, yy = np.meshgrid([plane_x_min, plane_x_max], [plane_y_min, plane_y_max])
-zz = np.zeros_like(xx)
-
-# Draw the xy plane in light grey
-ax.plot_surface(xx, yy, zz, alpha=0.15, color='lightgrey', edgecolor='none')
-
-# Make the pane backgrounds very dim
-ax.xaxis.pane.fill = True
-ax.yaxis.pane.fill = True
-ax.zaxis.pane.fill = True
-ax.xaxis.pane.set_alpha(0.02)
-ax.yaxis.pane.set_alpha(0.02)
-ax.zaxis.pane.set_alpha(0.02)
-
-# Enable grid FIRST
-ax.grid(True)
-
-# THEN make grid lines on all planes very dim (increase alpha to be more visible)
-ax.xaxis._axinfo["grid"].update({"color": (0.5, 0.5, 0.5, 0.2), "linewidth": 0.5})
-ax.yaxis._axinfo["grid"].update({"color": (0.5, 0.5, 0.5, 0.2), "linewidth": 0.5})
-ax.zaxis._axinfo["grid"].update({"color": (0.5, 0.5, 0.5, 0.2), "linewidth": 0.5})
-
-# Set labels
-ax.set_xlabel('X', fontsize=12)
-ax.set_ylabel('Y', fontsize=12)
-ax.set_zlabel('Z', fontsize=12)
-ax.set_zlim(-10, 10)  # Set z-axis limits
-
-# Add legend
-ax.legend()
-
-# Set viewing angle
-ax.view_init(elev=20, azim=45)
+print("\nAll plots generated.")
 
 
-# Set labels
-ax.set_xlabel('X', fontsize=12)
-ax.set_ylabel('Y', fontsize=12)
-ax.set_zlabel('Z', fontsize=12)
-ax.set_zlim(-10, 10)  # Set z-axis limits
 
-# Add legend
-ax.legend()
 
-# Set viewing angle
-ax.view_init(elev=20, azim=45)
 
-# Save the plot
-output_file = os.path.join(output_dir, "xy_plane_test.png")
-plt.savefig(output_file, dpi=300, bbox_inches='tight')
-print(f"Test plot saved to: {output_file}")
-plt.close(fig)
+
+
+
+
+
+
+
+
+
