@@ -6,7 +6,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pathlib import Path
-
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -142,6 +143,65 @@ def get_real_coords(atom_idx_obj, a0, a1, a2):
     pos_vec = (n0 + f0) * a0 + (n1 + f1) * a1 +(n2+ f2) * a2
     return pos_vec[0], pos_vec[1], pos_vec[2]
 
+def draw_self_hopping_loop(ax, atom_x, atom_y, atom_z, color, linestyle, radius=0.2):
+    """
+        Draws a circle with an arrow head on it to represent self-hopping.
+    """
+    offset_angle_deg = 45
+    offset_angle_rad = np.deg2rad(offset_angle_deg)
+    circle_center_x = atom_x + radius * np.cos(offset_angle_rad)
+    circle_center_y = atom_y + radius * np.sin(offset_angle_rad)
+    circle_center_z = atom_z  # Same z-level as the atom
+    # Generate circle points
+    theta = np.linspace(0, 2 * np.pi, 100)
+    x_circle = circle_center_x + radius * np.cos(theta)
+    y_circle = circle_center_y + radius * np.sin(theta)
+    z_circle = np.full_like(x_circle, circle_center_z)
+
+    # Draw the circle
+    ax.plot(x_circle, y_circle, z_circle, color=color, linestyle=linestyle, linewidth=2)
+    # Optional: Add arrowhead to indicate direction
+    # Arrow at theta=0 pointing in the direction of increasing theta
+    arrow_idx = 0
+    dx = -radius * np.sin(theta[arrow_idx]) * 0.3  # Tangent direction
+    dy = radius * np.cos(theta[arrow_idx]) * 0.3
+    dz = 0
+    ax.quiver(x_circle[arrow_idx], y_circle[arrow_idx], z_circle[arrow_idx],
+              dx, dy, dz, color=color, arrow_length_ratio=0.5, linewidth=2)
+
+def draw_arrows_and_circles(root_vertex, ax, radius, a0, a1, a2, tolerance=1e-5):
+    def _traverse_draw(node):
+        hop = node.hopping
+        start_x, start_y, start_z = get_real_coords(hop.from_atom, a0, a1, a2)
+        end_x, end_y, end_z = get_real_coords(hop.to_atom, a0, a1, a2)
+        if getattr(hop, 'line_type', 0) == 1:
+            arrow_color = 'blue'
+            arrow_style = 'dotted'
+        else:
+            arrow_color = 'crimson'
+            arrow_style = 'solid'
+        # Check for self-hopping
+        if abs(start_x - end_x) < tolerance and abs(start_y - end_y) < tolerance and abs(start_z - end_z) < tolerance:
+            draw_self_hopping_loop(ax, start_x, start_y, start_z, arrow_color, arrow_style)
+        else:
+            # Draw arrow from start to end
+            dx = end_x - start_x
+            dy = end_y - start_y
+            dz = end_z - start_z
+            ax.quiver(start_x, start_y, start_z,
+                      dx, dy, dz,
+                      color=arrow_color,
+                      arrow_length_ratio=0.15,
+                      linewidth=2,
+                      linestyle=arrow_style)
+
+        # Recursively process children
+        for child in node.children:
+            _traverse_draw(child)
+
+    # Start the traversal from the root
+    _traverse_draw(root_vertex)
+
 
 def plot_single_root_tree(root_vertex, root_index, parsed_config, unit_cell_atoms, output_dir, grid_params):
     # Unpack grid parameters
@@ -219,7 +279,8 @@ def plot_single_root_tree(root_vertex, root_index, parsed_config, unit_cell_atom
                      zorder=10,
                      label=position_name)  # This creates the legend entry
 
-
+    # Draw Tree Arrows
+    draw_arrows_and_circles(root_vertex, ax, truncation_radius, a0, a1, a2)
     ax.view_init(elev=30, azim=45)  # Adjust to your preference
 
     # Set labels
@@ -237,6 +298,181 @@ def plot_single_root_tree(root_vertex, root_index, parsed_config, unit_cell_atom
     print(f"Plot saved to: {output_file}")
     # plt.show()
     plt.close(fig)
+
+
+def draw_self_hopping_loop_plotly(fig, atom_x, atom_y, atom_z, color, dash_style, radius=0.2):
+    """Draws a circle for self-hopping in Plotly"""
+    offset_angle_deg = 45
+    offset_angle_rad = np.deg2rad(offset_angle_deg)
+    circle_center_x = atom_x + radius * np.cos(offset_angle_rad)
+    circle_center_y = atom_y + radius * np.sin(offset_angle_rad)
+    circle_center_z = atom_z
+
+    theta = np.linspace(0, 2 * np.pi, 100)
+    x_circle = circle_center_x + radius * np.cos(theta)
+    y_circle = circle_center_y + radius * np.sin(theta)
+    z_circle = np.full_like(x_circle, circle_center_z)
+
+    fig.add_trace(go.Scatter3d(
+        x=x_circle,
+        y=y_circle,
+        z=z_circle,
+        mode='lines',
+        line=dict(color=color, width=4, dash=dash_style),
+        showlegend=False,
+        hoverinfo='skip'
+    ))
+
+def draw_arrows_and_circles_plotly(root_vertex, fig, radius, a0, a1, a2, tolerance=1e-5):
+    def _traverse_draw(node):
+        hop = node.hopping
+        start_x, start_y, start_z = get_real_coords(hop.from_atom, a0, a1, a2)
+        end_x, end_y, end_z = get_real_coords(hop.to_atom, a0, a1, a2)
+
+        if getattr(hop, 'line_type', 0) == 1:
+            arrow_color = 'blue'
+            dash_style = 'dot'
+        else:
+            arrow_color = 'crimson'
+            dash_style = 'solid'
+
+        # Check for self-hopping
+        if abs(start_x - end_x) < tolerance and abs(start_y - end_y) < tolerance and abs(start_z - end_z) < tolerance:
+            draw_self_hopping_loop_plotly(fig, start_x, start_y, start_z, arrow_color, dash_style, radius)
+        else:
+            # Draw arrow (cone for arrowhead)
+            fig.add_trace(go.Scatter3d(
+                x=[start_x, end_x],
+                y=[start_y, end_y],
+                z=[start_z, end_z],
+                mode='lines',
+                line=dict(color=arrow_color, width=4, dash=dash_style),
+                showlegend=False,
+                hovertemplate=f'Hopping<br>From: ({start_x:.2f}, {start_y:.2f}, {start_z:.2f})<br>To: ({end_x:.2f}, {end_y:.2f}, {end_z:.2f})<extra></extra>'
+            ))
+
+            # Add cone for arrowhead
+            dx = end_x - start_x
+            dy = end_y - start_y
+            dz = end_z - start_z
+            fig.add_trace(go.Cone(
+                x=[end_x],
+                y=[end_y],
+                z=[end_z],
+                u=[dx],
+                v=[dy],
+                w=[dz],
+                sizemode='absolute',
+                sizeref=0.3,
+                colorscale=[[0, arrow_color], [1, arrow_color]],
+                showscale=False,
+                showlegend=False,
+                hoverinfo='skip'
+            ))
+
+        for child in node.children:
+            _traverse_draw(child)
+
+    _traverse_draw(root_vertex)
+
+
+def plot_single_root_tree_interactive(root_vertex, root_index, parsed_config, unit_cell_atoms, output_dir, grid_params):
+    # Unpack grid parameters
+    n0_range = grid_params['n0_range']
+    n1_range = grid_params['n1_range']
+    n0_min, n0_max = grid_params['n0_min'], grid_params['n0_max']
+    n1_min, n1_max = grid_params['n1_min'], grid_params['n1_max']
+    # Setup Lattice Basis
+    lattice_basis = np.array(parsed_config["lattice_basis"])
+    a0, a1, a2 = lattice_basis
+    truncation_radius = parsed_config["truncation_radius"]
+    # Create figure
+    fig = go.Figure()
+    # Plot lattice lines along a0 direction
+    for n1 in range(n1_min, n1_max + 1):
+        starting_point = n1 * a1 + n0_min * a0
+        ending_point = n1 * a1 + n0_max * a0
+        fig.add_trace(go.Scatter3d(
+            x=[starting_point[0], ending_point[0]],
+            y=[starting_point[1], ending_point[1]],
+            z=[starting_point[2], ending_point[2]],
+            mode='lines',
+            line=dict(color='black', width=2),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+    # Plot lattice lines along a1 direction
+    for n0 in range(n0_min, n0_max + 1):
+        starting_point = n0 * a0 + n1_min * a1
+        ending_point = n0 * a0 + n1_max * a1
+        fig.add_trace(go.Scatter3d(
+            x=[starting_point[0], ending_point[0]],
+            y=[starting_point[1], ending_point[1]],
+            z=[starting_point[2], ending_point[2]],
+            mode='lines',
+            line=dict(color='black', width=2),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+    # Draw Atoms
+    unique_position_names = set(atom.position_name for atom in unit_cell_atoms)
+    sorted_position_names = sorted(list(unique_position_names))
+    num_unique_positions = len(sorted_position_names)
+    hsv_colors = plt.cm.hsv(np.linspace(0, 1, num_unique_positions, endpoint=False))
+
+    # Convert matplotlib colors to hex for Plotly
+    def rgb_to_hex(rgb):
+        return '#{:02x}{:02x}{:02x}'.format(int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255))
+    name_to_color = {name: rgb_to_hex(hsv_colors[i]) for i, name in enumerate(sorted_position_names)}
+    # Plot each atom type
+    for position_name in sorted_position_names:
+        x_atoms, y_atoms, z_atoms = [], [], []
+        for n0 in n0_range[:-1]:
+            for n1 in n1_range[:-1]:
+                for atom in unit_cell_atoms:
+                    if atom.position_name == position_name:
+                        f0, f1, f2 = atom.frac_coord
+                        pos = (n0 + f0) * a0 + (n1 + f1) * a1 + f2 * a2
+                        x_atoms.append(pos[0])
+                        y_atoms.append(pos[1])
+                        z_atoms.append(pos[2])
+        fig.add_trace(go.Scatter3d(
+            x=x_atoms,
+            y=y_atoms,
+            z=z_atoms,
+            mode='markers',
+            marker=dict(
+                size=6,
+                color=name_to_color[position_name],
+                line=dict(color='black', width=1)
+            ),
+            name=position_name,
+            hovertemplate=f'{position_name}<br>x: %{{x:.2f}}<br>y: %{{y:.2f}}<br>z: %{{z:.2f}}<extra></extra>'
+        ))
+    # Draw arrows from tree
+    draw_arrows_and_circles_plotly(root_vertex, fig, truncation_radius, a0, a1, a2)
+    # Update layout
+    fig.update_layout(
+        scene=dict(
+            xaxis_title='x',
+            yaxis_title='y',
+            zaxis_title='z',
+            camera=dict(
+                eye=dict(x=1.5, y=1.5, z=1.2)
+            ),
+            aspectmode='data'
+        ),
+        title=f"Tree {root_index} - {parsed_config.get('name', 'Unknown System')}",
+        width=1200,
+        height=900,
+        showlegend=True
+    )
+
+    # Save as HTML
+    filename = f"lattice_grid_tree_{root_index}_interactive.html"
+    output_file = os.path.join(output_dir, filename)
+    fig.write_html(output_file)
+    print(f"Interactive plot saved to: {output_file}")
 
 
 # ==============================================================================
@@ -301,8 +537,9 @@ print("=" * 50)
 config_file_path = parsed_config["config_file_path"]
 config_dir = Path(config_file_path).parent
 output_dir = str(config_dir) + "/tree_visualization_3d_view/"
+output_dir_html=str(config_dir) + "/tree_visualization_3d_view_interactive/"
 Path(output_dir).mkdir(parents=True, exist_ok=True)
-
+Path(output_dir_html).mkdir(parents=True, exist_ok=True)
 
 
 # 4. Iterate and Plot
@@ -311,6 +548,7 @@ for i, root in enumerate(all_roots_sorted):
     # Only plot if it is a root (though input should be roots)
     if root.is_root:
         plot_single_root_tree(root, i, parsed_config, unit_cell_atoms, output_dir, grid_params)
+        plot_single_root_tree_interactive(root, i, parsed_config, unit_cell_atoms, output_dir_html, grid_params)
     else:
         print(f"Skipping index {i} as it is not a root vertex.")
 
