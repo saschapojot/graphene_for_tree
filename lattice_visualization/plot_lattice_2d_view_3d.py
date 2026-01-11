@@ -202,6 +202,42 @@ def draw_arrows_and_circles(root_vertex, ax, radius, a0, a1, a2, tolerance=1e-5)
     # Start the traversal from the root
     _traverse_draw(root_vertex)
 
+def plot_cell_000(a0,a1,a2,ax):
+    origin = np.array([0, 0, 0])
+
+    # The 8 corners of the unit cell
+    vertices = [
+        origin,  # (0,0,0)
+        a0,  # (1,0,0)
+        a1,  # (0,1,0)
+        a2,  # (0,0,1)
+        a0 + a1,  # (1,1,0)
+        a0 + a2,  # (1,0,1)
+        a1 + a2,  # (0,1,1)
+        a0 + a1 + a2  # (1,1,1)
+    ]
+    # Define the 12 edges of the unit cell (pairs of vertex indices)
+    edges = [
+        # Bottom face (z=0)
+        (0, 1), (0, 2), (1, 4), (2, 4),
+        # Top face (z=a2)
+        (3, 5), (3, 6), (5, 7), (6, 7),
+        # Vertical edges connecting bottom to top
+        (0, 3), (1, 5), (2, 6), (4, 7)
+    ]
+    # Plot each edge
+    for edge in edges:
+        v1, v2 = vertices[edge[0]], vertices[edge[1]]
+        ax.plot3D(
+            [v1[0], v2[0]],
+            [v1[1], v2[1]],
+            [v1[2], v2[2]],
+            color='grey',
+            linewidth=2,
+            linestyle='-.',
+            alpha=0.7
+        )
+
 
 def plot_single_root_tree(root_vertex, root_index, parsed_config, unit_cell_atoms, output_dir, grid_params):
     # Unpack grid parameters
@@ -216,7 +252,7 @@ def plot_single_root_tree(root_vertex, root_index, parsed_config, unit_cell_atom
     truncation_radius = parsed_config["truncation_radius"]
     fig = plt.figure(figsize=(12, 10))
     ax = fig.add_subplot(111, projection='3d')
-
+    plot_cell_000(a0,a1,a2,ax)
 
     # Enable grid FIRST
     ax.grid(True)
@@ -225,29 +261,29 @@ def plot_single_root_tree(root_vertex, root_index, parsed_config, unit_cell_atom
     ax.yaxis._axinfo["grid"].update({"color": (0.5, 0.5, 0.5, 0.2), "linewidth": 0.5})
     ax.zaxis._axinfo["grid"].update({"color": (0.5, 0.5, 0.5, 0.2), "linewidth": 0.5})
 
-    #plot lattice lines along a0 direction
-    for n1 in range(n1_min,n1_max+1):
-        starting_point=n1*a1+n0_min*a0
-        ending_point=n1*a1+n0_max*a0
-        x_start,y_start,z_start=starting_point
-        x_end,y_end,z_end=ending_point
-
-        x_vec=[x_start,x_end]
-        y_vec=[y_start,y_end]
-        z_vec=[z_start,z_end]
-
-        ax.plot3D(x_vec, y_vec, z_vec, color='black', linewidth=1, linestyle='-')
+    # #plot lattice lines along a0 direction
+    # for n1 in range(n1_min,n1_max+1):
+    #     starting_point=n1*a1+n0_min*a0
+    #     ending_point=n1*a1+n0_max*a0
+    #     x_start,y_start,z_start=starting_point
+    #     x_end,y_end,z_end=ending_point
+    #
+    #     x_vec=[x_start,x_end]
+    #     y_vec=[y_start,y_end]
+    #     z_vec=[z_start,z_end]
+    #
+    #     ax.plot3D(x_vec, y_vec, z_vec, color='black', linewidth=1, linestyle='-')
     #plot lattice along a1 direction
-    for n0 in range(n0_min,n0_max+1):
-        starting_point=n0*a0+n1_min*a1
-        ending_point=n0*a0+n1_max*a1
-        x_start, y_start, z_start = starting_point
-        x_end, y_end, z_end = ending_point
-
-        x_vec = [x_start, x_end]
-        y_vec = [y_start, y_end]
-        z_vec = [z_start, z_end]
-        ax.plot3D(x_vec, y_vec, z_vec, color='black', linewidth=1, linestyle='-')
+    # for n0 in range(n0_min,n0_max+1):
+    #     starting_point=n0*a0+n1_min*a1
+    #     ending_point=n0*a0+n1_max*a1
+    #     x_start, y_start, z_start = starting_point
+    #     x_end, y_end, z_end = ending_point
+    #
+    #     x_vec = [x_start, x_end]
+    #     y_vec = [y_start, y_end]
+    #     z_vec = [z_start, z_end]
+    #     ax.plot3D(x_vec, y_vec, z_vec, color='black', linewidth=1, linestyle='-')
 
     # Draw Atoms
     unique_position_names = set(atom.position_name for atom in unit_cell_atoms)
@@ -375,6 +411,48 @@ def draw_arrows_and_circles_plotly(root_vertex, fig, radius, a0, a1, a2, toleran
 
     _traverse_draw(root_vertex)
 
+def plot_cell_000_plotly(a0, a1, a2, fig):
+    """
+    Plots the edges of the unit cell [0,0,0] using the lattice vectors a0, a1, a2
+    for Plotly interactive plots.
+    """
+    origin = np.array([0, 0, 0])
+
+    # The 8 corners of the unit cell
+    vertices = [
+        origin,  # (0,0,0)
+        a0,  # (1,0,0)
+        a1,  # (0,1,0)
+        a2,  # (0,0,1)
+        a0 + a1,  # (1,1,0)
+        a0 + a2,  # (1,0,1)
+        a1 + a2,  # (0,1,1)
+        a0 + a1 + a2  # (1,1,1)
+    ]
+
+    # Define the 12 edges of the unit cell (pairs of vertex indices)
+    edges = [
+        # Bottom face (z=0)
+        (0, 1), (0, 2), (1, 4), (2, 4),
+        # Top face (z=a2)
+        (3, 5), (3, 6), (5, 7), (6, 7),
+        # Vertical edges connecting bottom to top
+        (0, 3), (1, 5), (2, 6), (4, 7)
+    ]
+
+    # Plot each edge
+    for edge in edges:
+        v1, v2 = vertices[edge[0]], vertices[edge[1]]
+        fig.add_trace(go.Scatter3d(
+            x=[v1[0], v2[0]],
+            y=[v1[1], v2[1]],
+            z=[v1[2], v2[2]],
+            mode='lines',
+            line=dict(color='grey', width=3, dash='dashdot'),
+            opacity=0.7,
+            showlegend=False,
+            hoverinfo='skip'
+        ))
 
 def plot_single_root_tree_interactive(root_vertex, root_index, parsed_config, unit_cell_atoms, output_dir, grid_params):
     # Unpack grid parameters
@@ -388,32 +466,34 @@ def plot_single_root_tree_interactive(root_vertex, root_index, parsed_config, un
     truncation_radius = parsed_config["truncation_radius"]
     # Create figure
     fig = go.Figure()
+    # Plot the unit cell [0,0,0]
+    plot_cell_000_plotly(a0, a1, a2, fig)
     # Plot lattice lines along a0 direction
-    for n1 in range(n1_min, n1_max + 1):
-        starting_point = n1 * a1 + n0_min * a0
-        ending_point = n1 * a1 + n0_max * a0
-        fig.add_trace(go.Scatter3d(
-            x=[starting_point[0], ending_point[0]],
-            y=[starting_point[1], ending_point[1]],
-            z=[starting_point[2], ending_point[2]],
-            mode='lines',
-            line=dict(color='black', width=2),
-            showlegend=False,
-            hoverinfo='skip'
-        ))
+    # for n1 in range(n1_min, n1_max + 1):
+    #     starting_point = n1 * a1 + n0_min * a0
+    #     ending_point = n1 * a1 + n0_max * a0
+    #     fig.add_trace(go.Scatter3d(
+    #         x=[starting_point[0], ending_point[0]],
+    #         y=[starting_point[1], ending_point[1]],
+    #         z=[starting_point[2], ending_point[2]],
+    #         mode='lines',
+    #         line=dict(color='black', width=2),
+    #         showlegend=False,
+    #         hoverinfo='skip'
+    #     ))
     # Plot lattice lines along a1 direction
-    for n0 in range(n0_min, n0_max + 1):
-        starting_point = n0 * a0 + n1_min * a1
-        ending_point = n0 * a0 + n1_max * a1
-        fig.add_trace(go.Scatter3d(
-            x=[starting_point[0], ending_point[0]],
-            y=[starting_point[1], ending_point[1]],
-            z=[starting_point[2], ending_point[2]],
-            mode='lines',
-            line=dict(color='black', width=2),
-            showlegend=False,
-            hoverinfo='skip'
-        ))
+    # for n0 in range(n0_min, n0_max + 1):
+    #     starting_point = n0 * a0 + n1_min * a1
+    #     ending_point = n0 * a0 + n1_max * a1
+    #     fig.add_trace(go.Scatter3d(
+    #         x=[starting_point[0], ending_point[0]],
+    #         y=[starting_point[1], ending_point[1]],
+    #         z=[starting_point[2], ending_point[2]],
+    #         mode='lines',
+    #         line=dict(color='black', width=2),
+    #         showlegend=False,
+    #         hoverinfo='skip'
+    #     ))
     # Draw Atoms
     unique_position_names = set(atom.position_name for atom in unit_cell_atoms)
     sorted_position_names = sorted(list(unique_position_names))
@@ -426,31 +506,64 @@ def plot_single_root_tree_interactive(root_vertex, root_index, parsed_config, un
     name_to_color = {name: rgb_to_hex(hsv_colors[i]) for i, name in enumerate(sorted_position_names)}
     # Plot each atom type
     for position_name in sorted_position_names:
-        x_atoms, y_atoms, z_atoms = [], [], []
+        # Separate atoms inside and outside unit cell [0,0,0]
+        x_atoms_in, y_atoms_in, z_atoms_in = [], [], []
+        x_atoms_out, y_atoms_out, z_atoms_out = [], [], []
         for n0 in n0_range[:-1]:
             for n1 in n1_range[:-1]:
                 for atom in unit_cell_atoms:
                     if atom.position_name == position_name:
                         f0, f1, f2 = atom.frac_coord
                         pos = (n0 + f0) * a0 + (n1 + f1) * a1 + f2 * a2
-                        x_atoms.append(pos[0])
-                        y_atoms.append(pos[1])
-                        z_atoms.append(pos[2])
-        fig.add_trace(go.Scatter3d(
-            x=x_atoms,
-            y=y_atoms,
-            z=z_atoms,
-            mode='markers',
-            marker=dict(
-                size=6,
-                color=name_to_color[position_name],
-                line=dict(color='black', width=1)
-            ),
-            name=position_name,
-            hovertemplate=f'{position_name}<br>x: %{{x:.2f}}<br>y: %{{y:.2f}}<br>z: %{{z:.2f}}<extra></extra>'
-        ))
+                        # Check if atom is in unit cell [0,0,0]
+                        if n0 == 0 and n1 == 0:
+                            x_atoms_in.append(pos[0])
+                            y_atoms_in.append(pos[1])
+                            z_atoms_in.append(pos[2])
+                        else:
+                            x_atoms_out.append(pos[0])
+                            y_atoms_out.append(pos[1])
+                            z_atoms_out.append(pos[2])
+
+        # Plot atoms inside unit cell [0,0,0] with full opacity
+        if x_atoms_in:
+            fig.add_trace(go.Scatter3d(
+                x=x_atoms_in,
+                y=y_atoms_in,
+                z=z_atoms_in,
+                mode='markers',
+                marker=dict(
+                    size=6,
+                    color=name_to_color[position_name],
+                    line=dict(color='black', width=1),
+                    opacity=1.0
+                ),
+                name=position_name,
+                legendgroup=position_name,
+                hovertemplate=f'{position_name} [0,0,0]<br>x: %{{x:.2f}}<br>y: %{{y:.2f}}<br>z: %{{z:.2f}}<extra></extra>'
+            ))
+        # Plot atoms outside unit cell [0,0,0] with reduced opacity
+        if x_atoms_out:
+            fig.add_trace(go.Scatter3d(
+                x=x_atoms_out,
+                y=y_atoms_out,
+                z=z_atoms_out,
+                mode='markers',
+                marker=dict(
+                    size=6,
+                    color=name_to_color[position_name],
+                    line=dict(color='black', width=1),
+                    opacity=0.3
+                ),
+                name=position_name,
+                legendgroup=position_name,
+                showlegend=False,  # Don't show duplicate legend entries
+                hovertemplate=f'{position_name}<br>x: %{{x:.2f}}<br>y: %{{y:.2f}}<br>z: %{{z:.2f}}<extra></extra>'
+            ))
+
     # Draw arrows from tree
-    draw_arrows_and_circles_plotly(root_vertex, fig, truncation_radius, a0, a1, a2)
+    r=0.5
+    draw_arrows_and_circles_plotly(root_vertex, fig, r, a0, a1, a2)
     # Update layout
     fig.update_layout(
         scene=dict(
@@ -536,9 +649,9 @@ print("=" * 50)
 # 3. Setup Output Directory
 config_file_path = parsed_config["config_file_path"]
 config_dir = Path(config_file_path).parent
-output_dir = str(config_dir) + "/tree_visualization_3d_view/"
+# output_dir = str(config_dir) + "/tree_visualization_3d_view/"
 output_dir_html=str(config_dir) + "/tree_visualization_3d_view_interactive/"
-Path(output_dir).mkdir(parents=True, exist_ok=True)
+# Path(output_dir).mkdir(parents=True, exist_ok=True)
 Path(output_dir_html).mkdir(parents=True, exist_ok=True)
 
 
@@ -547,7 +660,7 @@ print(f"\nGenerating plots for {len(all_roots_sorted)} trees...")
 for i, root in enumerate(all_roots_sorted):
     # Only plot if it is a root (though input should be roots)
     if root.is_root:
-        plot_single_root_tree(root, i, parsed_config, unit_cell_atoms, output_dir, grid_params)
+        # plot_single_root_tree(root, i, parsed_config, unit_cell_atoms, output_dir, grid_params)
         plot_single_root_tree_interactive(root, i, parsed_config, unit_cell_atoms, output_dir_html, grid_params)
     else:
         print(f"Skipping index {i} as it is not a root vertex.")
