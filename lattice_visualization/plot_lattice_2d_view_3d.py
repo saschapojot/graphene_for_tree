@@ -562,7 +562,7 @@ def plot_single_root_tree_interactive(root_vertex, root_index, parsed_config, un
             ))
 
     # Draw arrows from tree
-    r=0.5
+    r=0.2*min(np.linalg.norm(a0),np.linalg.norm(a1),np.linalg.norm(a2))
     draw_arrows_and_circles_plotly(root_vertex, fig, r, a0, a1, a2)
     # Update layout
     fig.update_layout(
