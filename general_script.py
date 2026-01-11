@@ -11,6 +11,7 @@ import sympy as sp
 import pickle
 import base64
 
+
 #self defined
 from classes.class_defs import frac_to_cartesian,atomIndex,hopping,vertex
 
@@ -3202,6 +3203,79 @@ def find_root_stabilizer(root,lattice_basis,space_group_bilbao_cart,tolerance=1e
             else:
                 continue
     return root_stabilizer
+def find_root_swapper(root,lattice_basis,space_group_bilbao_cart,tolerance=1e-3):
+    """
+     Find space group operations that swap the two atoms in a hopping.
+
+    A swapper operation g = (R|t) satisfies:
+        R @ to_atom + t + n·basis = from_atom
+        R @ from_atom + t + n·basis = to_atom
+     where n = [n0, n1, n2] is the same lattice shift for both transformations.
+      This constraint applies when the hopping is between atoms of the same
+    Wyckoff position type. It leads to additional symmetry constraints on
+    the hopping matrix: T = V(g) @ T^† @ V(g)^†
+    where V(g) is the orbital representation matrix for operation g, and
+    T^† is the Hermitian conjugate (conjugate transpose) of T.
+    Physical Interpretation:
+    -----------------------
+    If operation g swaps atom i ↔ j, then the hopping from i to j must
+    be related to the hopping from j to i by:
+        T(i←j) = V_i(g) @ [T(j←i)]^† @ V_j(g)^†
+
+    Combined with Hermiticity T(j←i) = [T(i←j)]^†, this gives:
+        T = V(g) @ T^† @ V(g)^†
+    Args:
+        root: vertex object containing the hopping
+        lattice_basis: Primitive lattice basis vectors (3×3 array),
+                      each row is a basis vector
+        space_group_bilbao_cart: List of space group matrices in Cartesian
+                                coordinates (shape: num_ops × 3 × 4)
+        tolerance:  Numerical tolerance for comparison (default: 1e-3)
+
+    Returns:
+        list: Indices of space group operations that swap the two atoms.
+              Empty list if atoms have different Wyckoff position types.
+
+    """
+    #swapping constraint requires that the two atoms have the same Wyckoff position
+
+    # Extract atoms from hopping
+    to_atom = root.hopping.to_atom
+    from_atom = root.hopping.from_atom
+
+    # Check if atoms have the same Wyckoff position type
+    # Swapping only makes sense for atoms of the same Wyckoff position type
+    if to_atom.position_name!=from_atom.position_name:
+        return []
+    # Get Cartesian coordinates
+    to_atom_cart_coord = to_atom.cart_coord
+    from_atom_cart_coord = from_atom.cart_coord
+    # Get lattice basis vectors
+    a0, a1, a2 = lattice_basis
+    lattice_matrix = np.column_stack([a0, a1, a2])
+    root_swapper=[]
+    for op_idx, group_mat in enumerate(space_group_bilbao_cart):
+        R, t = get_rotation_translation(space_group_bilbao_cart, op_idx)
+        # Apply symmetry operation to both atoms
+        to_atom_transformed = R @ to_atom_cart_coord + t
+        from_atom_transformed = R @ from_atom_cart_coord + t
+
+        diff_from_to_transformed=from_atom_cart_coord-to_atom_transformed
+        diff_to_from_transformed=to_atom_cart_coord-from_atom_transformed
+
+        diff_vec=diff_from_to_transformed-diff_to_from_transformed
+        if np.linalg.norm(diff_vec)<tolerance:
+            n_vector = np.linalg.solve(lattice_matrix,diff_from_to_transformed)
+            n_rounded = np.round(n_vector)
+            if np.allclose(n_vector, n_rounded, atol=tolerance):
+                root_swapper.append(op_idx)
+            else:
+                continue
+    return root_swapper
+
+
+
+
 
 def get_stabilizer_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart,tolerance=1e-3):
     """
@@ -3247,7 +3321,7 @@ def get_stabilizer_constraints(root,tree_idx,lattice_basis,space_group_bilbao_ca
 
         all_constraints.append({
             'op_id': op_id,
-            'stab_id': stab_id,
+            #'stab_id': stab_id,
             'V_to': root_to_atom.get_representation_matrix(op_id),
             'V_from': root_from_atom.get_representation_matrix(op_id),
             'diff_T': diff_T_simplified,
@@ -3559,14 +3633,16 @@ try:
 except Exception as e:
     print(f"Error preparing data for visualization: {e}")
 
-# tree_idx =1
-# root = all_roots_sorted[tree_idx]
-# print_tree(root)
+tree_idx =0
+root = all_roots_sorted[tree_idx]
+print_tree(root)
+sw_list=find_root_swapper(root,lattice_basis,space_group_bilbao_cart,1e-3)
+print(f"sw_list={sw_list}")
 # analysis_result = analyze_tree_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart)
 # print("\n" + "=" * 80)
 # print("ANALYSIS SUMMARY")
 # print("=" * 80)
-# print(f"Total parameters in T: {analysis_result['T'].shape[0]} × {analysis_result['T'].shape[1]} = {analysis_result['T'].shape[0] * analysis_result['T'].shape[1]}")
+# print(analysis_result["nullity"])
 #
 #
 #
