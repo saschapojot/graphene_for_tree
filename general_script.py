@@ -3274,32 +3274,22 @@ def find_root_swapper(root,lattice_basis,space_group_bilbao_cart,tolerance=1e-3)
     return root_swapper
 
 
-
-
-
 def get_stabilizer_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart,tolerance=1e-3):
     """
-    Get all constraint equations from stabilizer operations for a root's hopping matrix.
-    Args:
-        root:
-        tree_idx:
-
-    Returns:
-        dict: Contains 'T', 'constraints', 'equations'
+    Get all constraint equations from stabilizer constraints and swapping constraints
     """
     # Create hopping matrix
-    T=create_hopping_matrix(root,tree_idx)
-
-    # Get stabilizer operations
-    root_stabilizer = list(find_root_stabilizer(root,lattice_basis,space_group_bilbao_cart,tolerance))
-
+    T = create_hopping_matrix(root, tree_idx)
     # Get atom information
     root_to_atom = root.hopping.to_atom
     root_from_atom = root.hopping.from_atom
+    # Get stabilizer operations
+    root_stabilizer = list(find_root_stabilizer(root, lattice_basis, space_group_bilbao_cart, tolerance))
 
-    # Store all constraints
-    all_constraints = []
-    all_equations = []
+
+    #compute stabilizer constraints
+    stab_constraints_all=[]
+    stab_equations_all=[]
     for stab_id, op_id in enumerate(root_stabilizer):
         # Get representation matrices directly from atoms
         V_to = root_to_atom.get_sympy_representation_matrix(op_id)
@@ -3318,22 +3308,34 @@ def get_stabilizer_constraints(root,tree_idx,lattice_basis,space_group_bilbao_ca
                         'element': (i, j),
                         'equation': diff_T_simplified[i, j]
                     })
-
-        all_constraints.append({
+        stab_constraints_all.append({
             'op_id': op_id,
-            #'stab_id': stab_id,
             'V_to': root_to_atom.get_representation_matrix(op_id),
             'V_from': root_from_atom.get_representation_matrix(op_id),
             'diff_T': diff_T_simplified,
             'equations': equations
+
         })
-        all_equations.extend(equations)
+        stab_equations_all.extend(equations)
+
+
+
     return {
         'T': T,
         'root_stabilizer': root_stabilizer,
-        'constraints': all_constraints,
-        'all_equations': all_equations
+
+        'stab_constraints_all':stab_constraints_all,
+        'stab_equations_all':stab_equations_all,
+
     }
+
+
+
+
+
+
+
+
 
 def are_equivalent_equations(eq1, eq2):
     """Check if two equations are mathematically equivalent"""
@@ -3422,64 +3424,7 @@ def reconstruct_hopping_matrix(T_original, dependent_expressions):
     return T_reconstructed
 
 
-def analyze_tree_constraints(root, tree_idx,lattice_basis,space_group_bilbao_cart, tolerance=1e-3):
-    """
-    Complete constraint analysis for a single tree
-    Args:
-        root:
-        parsed_config:
-        tree_idx:
-        tolerance:
 
-    Returns:
-
-    """
-    # Get stabilizer constraints
-    root_stab_result = get_stabilizer_constraints(root, tree_idx,lattice_basis,space_group_bilbao_cart,tolerance)
-    print(f"len(root_stab_result[all_equations])={len(root_stab_result["all_equations"])}")
-    # Get unique equations
-    unique_eqs = get_unique_equations(root_stab_result['all_equations'])
-    print(f"len(unique_eqs)={len(unique_eqs)}")
-    if len(unique_eqs) > 0:
-        A, x, symbols = equations_to_matrix_form(unique_eqs, tolerance=tolerance)
-        # A_cleaned = A.applyfunc(lambda x: 0 if abs(float(x)) < tolerance else x)
-        A_rref, pivot_cols = A.rref()
-        free_var_indices = [i for i in range(len(symbols)) if i not in pivot_cols]
-        dependent_var_indices = list(pivot_cols)
-        dependent_expressions = get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=tolerance)
-        T_reconstructed = reconstruct_hopping_matrix(root_stab_result['T'], dependent_expressions)
-
-        root_stab_result.update({
-            'unique_equations': unique_eqs,
-            'constraint_matrix': A,
-            'constraint_matrix_rref': A_rref,
-            'pivot_cols': pivot_cols,
-            'symbols': symbols,
-            'free_var_indices': free_var_indices,
-            'dependent_var_indices': dependent_var_indices,
-            'dependent_expressions': dependent_expressions,
-            'T_reconstructed': T_reconstructed,
-            'rank': len(pivot_cols),
-            'nullity': len(symbols) - len(pivot_cols)
-        })
-
-    else:
-        total_params = root_stab_result['T'].shape[0] * root_stab_result['T'].shape[1]
-        root_stab_result.update({
-            'unique_equations': [],
-            'constraint_matrix': None,
-            'constraint_matrix_rref': None,
-            'pivot_cols': (),
-            'symbols': [],
-            'free_var_indices': list(range(total_params)),
-            'dependent_var_indices': [],
-            'dependent_expressions': {},
-            'T_reconstructed': root_stab_result['T'].copy(),
-            'rank': 0,
-            'nullity': total_params
-        })
-
-    return root_stab_result
 
 def propagate_T_to_child(parent_vertex, child_vertex,type_linear,type_hermitian, tolerance=1e-3):
     # Early return if child is None
@@ -3638,52 +3583,6 @@ root = all_roots_sorted[tree_idx]
 print_tree(root)
 sw_list=find_root_swapper(root,lattice_basis,space_group_bilbao_cart,1e-3)
 print(f"sw_list={sw_list}")
-# analysis_result = analyze_tree_constraints(root,tree_idx,lattice_basis,space_group_bilbao_cart)
-# print("\n" + "=" * 80)
-# print("ANALYSIS SUMMARY")
-# print("=" * 80)
-# print(analysis_result["nullity"])
-#
-#
-#
-# # CRITICAL: Assign T to root before propagation
-# root.hopping.T = analysis_result['T_reconstructed']
-# sp.pprint( analysis_result['T_reconstructed'])
-# sp.pprint( analysis_result['unique_equations'])
+rst=get_stabilizer_constraints(root,tree_idx,lattice_basis, space_group_bilbao_cart)
+sp.pprint(rst["stab_equations_all"])
 
-
-# atom0=unit_cell_atoms[0]
-# print(f"atom0: {atom0}")
-# print(f"identity_idx={identity_idx}")
-# #
-# equivalence_classes_center_atom_0 = get_equivalent_sets_for_one_center_atom(0, unit_cell_atoms, all_neighbors,
-#                                                                                     space_group_bilbao_cart,
-#                                                                                     identity_idx)
-#
-# ind4=2
-# ind5=3
-# eq_class_4=equivalence_classes_center_atom_0[ind4]
-# eq_class_5=equivalence_classes_center_atom_0[ind5]
-#
-# atom_class_4_ref=eq_class_4[0][0]
-# atom_class_5_ref=eq_class_5[0][0]
-#
-# vec_atom4_to_atom0=atom0.cart_coord-atom_class_4_ref.cart_coord
-# vec_atom5_to_atom0=atom0.cart_coord-atom_class_5_ref.cart_coord
-#
-# hopping_class4=equivalent_class_to_hoppings(eq_class_4,atom0,space_group_bilbao_cart, identity_idx)
-#
-# hopping_class5=equivalent_class_to_hoppings(eq_class_5,atom0,space_group_bilbao_cart, identity_idx)
-#
-# root4=one_equivalent_hopping_class_to_root(hopping_class4,identity_idx, type_linear)
-# root5=one_equivalent_hopping_class_to_root(hopping_class5,identity_idx, type_linear)
-# #
-# is_hermitian,op_idx_hermitian,n_vec_hermitian=check_hopping_hermitian(root4.hopping,root5.hopping, space_group_bilbao_cart,
-#                             lattice_basis)
-# is_linear,op_idx_lin,n_vec_lin=check_hopping_linear(root4.hopping,root5.hopping, space_group_bilbao_cart,
-#                             lattice_basis)
-#
-# print(f"is_linear={is_linear}, op_idx_lin={op_idx_lin}, n_vec_lin={n_vec_lin}")
-# print(f"is_hermitian={is_hermitian}, op_idx_hermitian={op_idx_hermitian}, n_vec_hermitian={n_vec_hermitian}")
-# print_tree(root4)
-# print_tree(root5)
