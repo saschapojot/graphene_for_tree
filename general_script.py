@@ -3432,73 +3432,6 @@ def reconstruct_hopping_matrix(T_original, dependent_expressions, tolerance=1e-3
 
 
 
-def propagate_T_to_child(parent_vertex, child_vertex,type_linear,type_hermitian, tolerance=1e-3):
-    # Early return if child is None
-    if child_vertex is None:
-        return
-    # Get parent's hopping matrix
-    T_parent = parent_vertex.hopping.T
-    # Get the operation that transforms parent to child
-    op_idx_parent_to_child = child_vertex.hopping.operation_idx
-    # Get representation matrices for parent's atoms under this operation
-    parent_to_atom_V = (parent_vertex.hopping.to_atom.orbital_representations)[op_idx_parent_to_child]
-    parent_from_atom_V = (parent_vertex.hopping.from_atom.orbital_representations)[op_idx_parent_to_child]
-    # Get child type
-    child_type = child_vertex.type
-
-    # Convert to SymPy matrices
-    parent_to_atom_V_sp = sp.Matrix(parent_to_atom_V)
-    parent_from_atom_V_sp = sp.Matrix(parent_from_atom_V)
-    # Apply transformation based on child type
-
-    if child_type == type_linear:
-        T_child = parent_to_atom_V_sp @ T_parent @ parent_from_atom_V_sp.H
-    elif child_type == type_hermitian:
-        T_child = (parent_to_atom_V_sp @ T_parent @ parent_from_atom_V_sp.H).H
-
-    else:
-        raise ValueError(f"Unknown child type: {child_type}")
-
-    # Simplify the result
-    T_child = sp.simplify(T_child)
-    # Assign to child
-    child_vertex.hopping.T = T_child
-
-
-def propagate_to_all_children(parent_vertex, type_linear,type_hermitian, tolerance=1e-3):
-    """
-    Propagate T from parent to all descendants using BFS (breadth-first search)
-    Args:
-        parent_vertex:
-        type_linear:
-        type_hermitian:
-        tolerance:
-
-    Returns:
-
-    """
-    from collections import deque
-    if len(parent_vertex.children) == 0:
-        return
-    # Queue stores tuples: (parent_vertex, child_vertex, level)
-    queue = deque()
-    # Initialize queue with all immediate children (level 1)
-    for child in parent_vertex.children:
-        queue.append((parent_vertex, child, 1))
-    # Track statistics
-    total_propagated = 0
-    max_level = 0
-    # Process queue level-by-level
-    while queue:
-        parent, child, level = queue.popleft()
-        # Propagate T from parent to child
-        propagate_T_to_child(parent, child,type_linear,type_hermitian, tolerance=tolerance)
-        total_propagated += 1
-        max_level = max(max_level, level)
-        # Add all grandchildren to queue (next level)
-        for grandchild in child.children:
-            queue.append((child, grandchild, level + 1))
-
 
 def get_hopping_distance(root):
     """Calculate the distance for a root's hopping"""
@@ -3787,6 +3720,145 @@ def analyze_swapping_constraints(root,lattice_basis,space_group_bilbao_cart, tol
 
 
 
+def propagate_T_to_child(parent_vertex, child_vertex,type_linear,type_hermitian, tolerance=1e-3):
+    # Early return if child is None
+    if child_vertex is None:
+        return
+    # Get parent's hopping matrix
+    T_reconstructed_swap_parent = parent_vertex.hopping.T_reconstructed_swap
+    # Get the operation that transforms parent to child
+    op_idx_parent_to_child = child_vertex.hopping.operation_idx
+    # Get representation matrices for parent's atoms under this operation
+    parent_to_atom_V = (parent_vertex.hopping.to_atom.orbital_representations)[op_idx_parent_to_child]
+    parent_from_atom_V = (parent_vertex.hopping.from_atom.orbital_representations)[op_idx_parent_to_child]
+    # Get child type
+    child_type = child_vertex.type
+
+    # Convert to SymPy matrices
+    parent_to_atom_V_sp = sp.Matrix(parent_to_atom_V)
+    parent_from_atom_V_sp = sp.Matrix(parent_from_atom_V)
+    # Apply transformation based on child type
+
+    if child_type == type_linear:
+        T_reconstructed_swap_child = parent_to_atom_V_sp @ T_reconstructed_swap_parent @ parent_from_atom_V_sp.H
+    elif child_type == type_hermitian:
+        T_reconstructed_swap_child = (parent_to_atom_V_sp @ T_reconstructed_swap_parent @ parent_from_atom_V_sp.H).H
+
+    else:
+        raise ValueError(f"Unknown child type: {child_type}")
+
+    # Simplify the result
+    T_reconstructed_swap_child = sp.simplify(T_reconstructed_swap_child)
+    # Assign to child
+    child_vertex.hopping.T_reconstructed_swap = T_reconstructed_swap_child
+
+
+def propagate_to_all_children(parent_vertex, type_linear,type_hermitian, tolerance=1e-3):
+    """
+    Propagate T from parent to all descendants using BFS (breadth-first search)
+    Args:
+        parent_vertex:
+        type_linear:
+        type_hermitian:
+        tolerance:
+
+    Returns:
+
+    """
+    from collections import deque
+    if len(parent_vertex.children) == 0:
+        return
+    # Queue stores tuples: (parent_vertex, child_vertex, level)
+    queue = deque()
+    # Initialize queue with all immediate children (level 1)
+    for child in parent_vertex.children:
+        queue.append((parent_vertex, child, 1))
+    # Track statistics
+    total_propagated = 0
+    max_level = 0
+    # Process queue level-by-level
+    while queue:
+        parent, child, level = queue.popleft()
+        # Propagate T from parent to child
+        propagate_T_to_child(parent, child,type_linear,type_hermitian, tolerance=tolerance)
+        total_propagated += 1
+        max_level = max(max_level, level)
+        # Add all grandchildren to queue (next level)
+        for grandchild in child.children:
+            queue.append((child, grandchild, level + 1))
+
+
+# ==============================================================================
+# Print each node with T_reconstructed_swap
+# ==============================================================================
+
+def print_node_with_matrix(vertex, prefix="", is_last=True, max_depth=None, current_depth=0):
+    """
+    Recursively print tree structure with T_reconstructed_swap for each node
+
+    Args:
+        vertex: vertex object to print
+        prefix: String prefix for indentation (used in recursion)
+        is_last: Boolean indicating if this is the last child
+        max_depth: Maximum depth to print (None = unlimited)
+        current_depth: Current depth in recursion
+    """
+    # Check max depth
+    if max_depth is not None and current_depth > max_depth:
+        return
+
+    # Determine node styling
+    if vertex.is_root:
+        node_label = "ROOT"
+        connector = "╔═══ "
+    else:
+        node_label = f"CHILD ({vertex.type})"
+        connector = "└── " if is_last else "├── "
+
+    # Build node description
+    hop = vertex.hopping
+    to_cell = f"[{hop.to_atom.n0},{hop.to_atom.n1},{hop.to_atom.n2}]"
+    from_cell = f"[{hop.from_atom.n0},{hop.from_atom.n1},{hop.from_atom.n2}]"
+    basic_info = f"{hop.to_atom.wyckoff_instance_id}{to_cell} ← {hop.from_atom.wyckoff_instance_id}{from_cell}"
+
+    # Print main node line
+    print(f"{prefix}{connector}{node_label}: {basic_info}, op={hop.operation_idx}, d={hop.distance:.4f}")
+
+    # Determine detail prefix
+    if vertex.is_root:
+        detail_prefix = prefix + "    "
+    else:
+        detail_prefix = prefix + ("    " if is_last else "│   ")
+
+    # Print T_reconstructed_swap if it exists
+    if hasattr(hop, 'T_reconstructed_swap') and hop.T_reconstructed_swap is not None:
+        free_symbols = hop.T_reconstructed_swap.free_symbols
+        print(f"{detail_prefix}Free parameters: {len(free_symbols)}")
+
+        # Print the matrix
+        print(f"{detail_prefix}T_reconstructed_swap:")
+        matrix_str = sp.pretty(hop.T_reconstructed_swap, use_unicode=False)
+        for line in matrix_str.split('\n'):
+            print(f"{detail_prefix}  {line}")
+    else:
+        print(f"{detail_prefix}T_reconstructed_swap: NOT SET")
+
+    # Print separator
+    print(f"{detail_prefix}")
+
+    # Recursively print children
+    if vertex.children:
+        for i, child in enumerate(vertex.children):
+            is_last_child = (i == len(vertex.children) - 1)
+
+            # Determine new prefix for children
+            if vertex.is_root:
+                new_prefix = ""
+            else:
+                new_prefix = prefix + ("    " if is_last else "│   ")
+
+            print_node_with_matrix(child, new_prefix, is_last_child, max_depth, current_depth + 1)
+
 
 lattice_basis = np.array(parsed_config['lattice_basis'])
 type_linear="linear"
@@ -3877,3 +3949,28 @@ for tree_idx, root in enumerate(all_roots_sorted):
     all_roots_reconstructed_swapped.append(root)
 
 
+
+# ==============================================================================
+# Propagate T_reconstructed_swap to all children
+# ==============================================================================
+print("\n" + "=" * 80)
+print("PROPAGATING T_RECONSTRUCTED_SWAP TO ALL CHILDREN")
+print("=" * 80)
+for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
+    propagate_to_all_children(root, type_linear, type_hermitian, tolerance=tol)
+
+print("\n" + "=" * 80)
+print("TREE STRUCTURES WITH T_RECONSTRUCTED_SWAP")
+print("=" * 80)
+
+for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
+    hop = root.hopping
+
+    print(f"\n{'─' * 80}")
+    print(f"Tree {tree_idx}: Distance = {hop.distance:.6f}, "
+          f"Hopping: {hop.to_atom.position_name} ← {hop.from_atom.position_name}")
+    print(f"{'─' * 80}")
+
+    print_node_with_matrix(root, max_depth=None)
+
+print("\n" + "=" * 80)
