@@ -3280,6 +3280,7 @@ def get_stabilizer_constraints(root,tree_idx,lattice_basis,space_group_bilbao_ca
     """
     # Create hopping matrix
     T = create_hopping_matrix(root, tree_idx)
+    root.hopping.T=deepcopy(T)
     # Get atom information
     root_to_atom = root.hopping.to_atom
     root_from_atom = root.hopping.from_atom
@@ -3377,7 +3378,7 @@ def equations_to_matrix_form(equations, tolerance=1e-3):
         eq_expanded = sp.expand(eq)
         for j, symbol in enumerate(sorted_symbols):
             coeff = eq_expanded.coeff(symbol)
-            coeff_val = sp.Float(coeff)
+            coeff_val = float(coeff)
             if np.abs(coeff_val) < tolerance:
                 coeff_val = 0.0
             A[i, j] = coeff_val
@@ -3391,6 +3392,7 @@ def get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=1e-3):
     # 1. Identify Free Variables
     free_var_indices = [i for i in range(len(symbols)) if i not in pivot_cols]
     dependent_expressions = {}
+
     # 2. Iterate through Pivot Columns (Dependent Variables)
     for row_idx, col_idx in enumerate(pivot_cols):
         if row_idx < A_rref.shape[0]:
@@ -3400,11 +3402,14 @@ def get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=1e-3):
             for free_idx in free_var_indices:
                 # Move free variable term to the RHS (multiply by -1)
                 coeff = -A_rref[row_idx, free_idx]
-                coeff_val =sp.Float(coeff)
+
                 # Check tolerance to avoid numerical noise
+                coeff_val = float(coeff)
+                # Only add term if coefficient is non-zero
                 if abs(coeff_val) >= tolerance:
-                    coeff = sp.Float(coeff_val, precision=-int(np.log10(tolerance)))
-                    expr_terms.append(coeff * symbols[free_idx])
+                    # coeff_simplified = sp.nsimplify(coeff, rational=True, tolerance=tolerance / 10)
+                    expr_terms.append(coeff_val * symbols[free_idx])
+
             # 4. Sum terms or set to zero
             if expr_terms:
                 expression = sum(expr_terms)
@@ -3414,13 +3419,14 @@ def get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=1e-3):
             dependent_expressions[dependent_var] = expression
     return dependent_expressions
 
-def reconstruct_hopping_matrix(T_original, dependent_expressions):
+
+
+def reconstruct_hopping_matrix(T_original, dependent_expressions, tolerance=1e-3):
     """Reconstruct hopping matrix with only free variables"""
     T_reconstructed = T_original.copy()
 
     for dep_var, expr in dependent_expressions.items():
         T_reconstructed = T_reconstructed.subs(dep_var, expr)
-
     return T_reconstructed
 
 
@@ -3499,7 +3505,145 @@ def get_hopping_distance(root):
     hopping = root.hopping
     return np.linalg.norm(hopping.from_atom.cart_coord - hopping.to_atom.cart_coord)
 
+def analyze_stabilizer_constraints(root, tree_idx,lattice_basis,space_group_bilbao_cart, tolerance=1e-3):
+    """
+    perform constraint analysis using stabilizer constraints
+    Args:
+        root:
+        tree_idx:
+        lattice_basis:
+        space_group_bilbao_cart:
+        tolerance:
 
+    Returns:
+
+    """
+    # Get stabilizer constraints
+    root_stab_result = get_stabilizer_constraints(root, tree_idx, lattice_basis, space_group_bilbao_cart, tolerance)
+    # print(f"len(root_stab_result[stab_equations_all])={len(root_stab_result["stab_equations_all"])}")
+    # Get unique equations
+    unique_eqs = get_unique_equations(root_stab_result['stab_equations_all'])
+    # sp.pprint(unique_eqs)
+    # print(f"len(unique_eqs)={len(unique_eqs)}")
+    if len(unique_eqs) > 0:
+        A, x, symbols = equations_to_matrix_form(unique_eqs, tolerance=tolerance)
+        A_rref, pivot_cols = A.rref()
+
+        free_var_indices = [i for i in range(len(symbols)) if i not in pivot_cols]
+        dependent_var_indices = list(pivot_cols)
+        dependent_expressions = get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance=tolerance)
+        # sp.pprint(dependent_expressions)
+        T_reconstructed = reconstruct_hopping_matrix(root_stab_result['T'], dependent_expressions,tolerance)
+        root.hopping.T_reconstructed=deepcopy(T_reconstructed)
+        root_stab_result.update({
+            'unique_equations': unique_eqs,
+            'constraint_matrix': A,
+            'constraint_matrix_rref': A_rref,
+            'pivot_cols': pivot_cols,
+            'symbols': symbols,
+            'free_var_indices': free_var_indices,
+            'dependent_var_indices': dependent_var_indices,
+            'dependent_expressions': dependent_expressions,
+            'T_reconstructed': T_reconstructed,
+            'rank': len(pivot_cols),
+            'nullity': len(symbols) - len(pivot_cols)
+        })
+
+    else:
+        total_params = root_stab_result['T'].shape[0] * root_stab_result['T'].shape[1]
+        T_reconstructed=root_stab_result['T'].copy()
+        root.hopping.T_reconstructed = deepcopy(T_reconstructed)
+        root_stab_result.update({
+            'unique_equations': [],
+            'constraint_matrix': None,
+            'constraint_matrix_rref': None,
+            'pivot_cols': (),
+            'symbols': [],
+            'free_var_indices': list(range(total_params)),
+            'dependent_var_indices': [],
+            'dependent_expressions': {},
+            'T_reconstructed': root_stab_result['T'].copy(),
+            'rank': 0,
+            'nullity': total_params
+        })
+    return root_stab_result
+
+
+
+
+def get_swapping_constraints(root,lattice_basis,space_group_bilbao_cart,tolerance=1e-3):
+    """
+    After obtaining stabilizer constraints for the hopping matrix in root, we impose swapping constraints
+    on the root's  hopping matrix
+    Args:
+        root:
+        lattice_basis:
+        space_group_bilbao_cart:
+        tolerance:
+
+    Returns:
+
+    """
+    # Get atom information
+    root_to_atom = root.hopping.to_atom
+    root_from_atom = root.hopping.from_atom
+    # Get stabilizer operations
+    root_swapper=list(find_root_swapper(root, lattice_basis, space_group_bilbao_cart, tolerance))
+    print(f"root_swapper={root_swapper}")
+    # compute swapper constraints
+    swap_constraints_all = []
+    swap_equations_all = []
+    for swap_id, op_id in enumerate(root_swapper):
+        # Get representation matrices directly from atoms
+        V_to = root_to_atom.get_sympy_representation_matrix(op_id)
+        V_from = root_from_atom.get_sympy_representation_matrix(op_id)
+        T_reconstructed_copy=deepcopy(root.hopping.T_reconstructed)
+        transformed_T=V_to@T_reconstructed_copy.H@ V_from.H
+        diff_T=T_reconstructed_copy-transformed_T
+        diff_T_simplified = sp.simplify(diff_T)
+        # Extract non-zero equations
+        equations = []
+        for i in range(diff_T.shape[0]):
+            for j in range(diff_T.shape[1]):
+                if diff_T_simplified[i, j] != 0:
+                    equations.append({
+                        'element': (i, j),
+                        'equation': diff_T_simplified[i, j]
+                    })
+
+        swap_constraints_all.append({
+            'op_id': op_id,
+            'V_to': root_to_atom.get_representation_matrix(op_id),
+            'V_from': root_from_atom.get_representation_matrix(op_id),
+            'diff_T': diff_T_simplified,
+            'equations': equations
+        })
+        swap_equations_all.extend(equations)
+
+
+    return {
+        "root_swapper":root_swapper,
+        "swap_constraints_all":swap_constraints_all,
+        "swap_equations_all":swap_equations_all
+    }
+
+
+def analyze_swapping_constraints(root,lattice_basis,space_group_bilbao_cart, tolerance=1e-3):
+    """
+
+    Args:
+        root:
+        lattice_basis:
+        space_group_bilbao_cart:
+        tolerance:
+
+    Returns:
+
+    """
+    root_swap_result=get_swapping_constraints(root, lattice_basis, space_group_bilbao_cart, tolerance)
+    # Get unique equations
+    unique_eqs =get_unique_equations(root_swap_result["swap_equations_all"])
+    sp.pprint(unique_eqs)
 
 lattice_basis = np.array(parsed_config['lattice_basis'])
 type_linear="linear"
@@ -3578,11 +3722,9 @@ try:
 except Exception as e:
     print(f"Error preparing data for visualization: {e}")
 
-tree_idx =0
+tree_idx =4
 root = all_roots_sorted[tree_idx]
 print_tree(root)
-sw_list=find_root_swapper(root,lattice_basis,space_group_bilbao_cart,1e-3)
-print(f"sw_list={sw_list}")
-rst=get_stabilizer_constraints(root,tree_idx,lattice_basis, space_group_bilbao_cart)
-sp.pprint(rst["stab_equations_all"])
 
+root_stab_result=analyze_stabilizer_constraints(root, tree_idx, lattice_basis, space_group_bilbao_cart)
+analyze_swapping_constraints(root, lattice_basis, space_group_bilbao_cart)
