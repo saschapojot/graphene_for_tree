@@ -265,6 +265,7 @@ class hopping:
                        # Represents the tight-binding hopping matrix: center orbitals ← neighbor orbitals
         self.line_type=None # for visualization
         self.T_reconstructed=None # reconstructed by constraints
+        self.T_reconstructed_swap=None # swapping constraints, computed from T_reconstructed
     def conjugate(self):
         """
         Return the conjugate (reverse) hopping direction.

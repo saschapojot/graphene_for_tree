@@ -10,7 +10,7 @@ from copy import deepcopy
 import sympy as sp
 import pickle
 import base64
-
+sp.init_printing(use_unicode=False, wrap_line=False)
 
 #self defined
 from classes.class_defs import frac_to_cartesian,atomIndex,hopping,vertex
@@ -3589,7 +3589,7 @@ def get_swapping_constraints(root,lattice_basis,space_group_bilbao_cart,toleranc
     root_from_atom = root.hopping.from_atom
     # Get stabilizer operations
     root_swapper=list(find_root_swapper(root, lattice_basis, space_group_bilbao_cart, tolerance))
-    print(f"root_swapper={root_swapper}")
+    # print(f"root_swapper={root_swapper}")
     # compute swapper constraints
     swap_constraints_all = []
     swap_equations_all = []
@@ -3628,7 +3628,41 @@ def get_swapping_constraints(root,lattice_basis,space_group_bilbao_cart,toleranc
     }
 
 
-def analyze_swapping_constraints(root,lattice_basis,space_group_bilbao_cart, tolerance=1e-3):
+
+
+
+
+def split_complex_symbols(T_matrix):
+    """
+    Replace each complex symbol T_ij with T_ij_re + I*T_ij_im
+
+    Args:
+        T_matrix: sympy.Matrix with complex symbols
+
+    Returns:
+        T_split: Matrix with split real/imaginary symbols
+        symbol_map: Dict mapping original → (real, imag) symbols
+    """
+    symbol_map = {}
+    T_split = T_matrix.copy()
+
+    for symbol in T_matrix.free_symbols:
+        # Create real and imaginary parts
+        symbol_str = str(symbol)
+        real_symbol = sp.Symbol(f"re_{symbol_str}", real=True)
+        imag_symbol = sp.Symbol(f"im_{symbol_str}", real=True)
+
+        # Replace in matrix
+        T_split = T_split.subs(symbol, real_symbol + sp.I * imag_symbol)
+        # sp.pprint(real_symbol + sp.I * imag_symbol)
+
+        # Store mapping
+        symbol_map[symbol] = real_symbol+sp.I*imag_symbol
+
+    return T_split, symbol_map
+
+
+def get_swapping_constraint_equations(root,lattice_basis,space_group_bilbao_cart, tolerance=1e-3):
     """
 
     Args:
@@ -3643,7 +3677,116 @@ def analyze_swapping_constraints(root,lattice_basis,space_group_bilbao_cart, tol
     root_swap_result=get_swapping_constraints(root, lattice_basis, space_group_bilbao_cart, tolerance)
     # Get unique equations
     unique_eqs =get_unique_equations(root_swap_result["swap_equations_all"])
-    sp.pprint(unique_eqs)
+
+    # STEP 1: Split T_reconstructed into real and imaginary parts
+    T_split, symbol_map=split_complex_symbols(root.hopping.T_reconstructed)
+
+    # STEP 2: Substitute split symbols into equations
+    equations_split = []
+    for eq in unique_eqs:
+        eq_split = eq
+        # Substitute each original symbol with its split form
+        for orig_symbol, split_expr in symbol_map.items():
+            eq_split = eq_split.subs(orig_symbol, split_expr)
+        # Expand and simplify
+        eq_split = sp.expand(eq_split)
+        eq_split = sp.simplify(eq_split)
+        equations_split.append(eq_split)
+
+    # STEP 3: Extract real and imaginary parts
+    real_eqs = []
+    imag_eqs = []
+    for eq in equations_split:
+        # Separate real and imaginary parts
+        real_part = sp.re(eq)
+        imag_part = sp.im(eq)
+        # Simplify
+        real_part = sp.simplify(real_part)
+        imag_part = sp.simplify(imag_part)
+        # Only add non-zero equations
+        if real_part != 0:
+            real_eqs.append(real_part)
+        if imag_part != 0:
+            imag_eqs.append(imag_part)
+
+    return {
+        'unique_equations_complex': unique_eqs,
+        'unique_equations_split': equations_split,
+        'unique_equations_real': real_eqs,
+        'unique_equations_imag': imag_eqs,
+        'symbol_map': symbol_map,
+        'T_split': T_split,
+        'root_swapper': root_swap_result['root_swapper']
+    }
+
+
+def analyze_swapping_constraints(root,lattice_basis,space_group_bilbao_cart, tolerance=1e-3):
+    """
+    Analyze swapping constraints with complex conjugate handling and RREF
+    Args:
+        root:
+        lattice_basis:
+        space_group_bilbao_cart:
+        tolerance:
+
+    Returns:
+
+    """
+    swp_constraints_result=get_swapping_constraint_equations(root,lattice_basis,space_group_bilbao_cart, tolerance)
+    equations_all=[]
+    unique_equations_real=swp_constraints_result["unique_equations_real"]
+    unique_equations_imag=swp_constraints_result["unique_equations_imag"]
+    equations_all.extend(unique_equations_real)
+    equations_all.extend(unique_equations_imag)
+    if len(equations_all) == 0:
+        # No swapping constraints
+        T_reconstructed_swap = root.hopping.T_reconstructed.copy()
+        root.hopping.T_reconstructed_swap = deepcopy(T_reconstructed_swap)
+        swp_constraints_result.update({
+            'equations_all': [],
+            'constraint_matrix': None,
+            'constraint_matrix_rref': None,
+            'pivot_cols': (),
+            'symbols': [],
+            'dependent_var_indices': [],
+            'dependent_expressions': {},
+            'T_reconstructed_swap': T_reconstructed_swap,
+        })
+        return swp_constraints_result
+    # Convert equations to matrix form
+    A, x, symbols = equations_to_matrix_form(equations_all, tolerance=tolerance)
+
+    # Perform RREF
+    A_rref, pivot_cols = A.rref()
+    # Identify dependent variables
+    dependent_var_indices = list(pivot_cols)
+    # Get expressions for dependent variables in terms of free variables
+    dependent_expressions = get_dependent_expressions(A_rref, pivot_cols, symbols, tolerance)
+
+
+    # Reconstruct T with swapping constraints applied
+    # Start from T_split (which has real/imaginary split symbols)
+    T_split = swp_constraints_result['T_split']
+    T_reconstructed_swap = reconstruct_hopping_matrix(T_split, dependent_expressions, tolerance)
+
+
+    # Store reconstructed matrix in root
+    root.hopping.T_reconstructed_swap = deepcopy(T_reconstructed_swap)
+    # Update results dictionary
+    swp_constraints_result.update({
+        'equations_all': equations_all,
+        'constraint_matrix': A,
+        'constraint_matrix_rref': A_rref,
+        'pivot_cols': pivot_cols,
+        'symbols': symbols,
+        'dependent_var_indices': dependent_var_indices,
+        'dependent_expressions': dependent_expressions,
+        'T_reconstructed_swap': T_reconstructed_swap,
+    })
+    return swp_constraints_result
+
+
+
 
 lattice_basis = np.array(parsed_config['lattice_basis'])
 type_linear="linear"
@@ -3722,9 +3865,15 @@ try:
 except Exception as e:
     print(f"Error preparing data for visualization: {e}")
 
-tree_idx =4
-root = all_roots_sorted[tree_idx]
-print_tree(root)
 
-root_stab_result=analyze_stabilizer_constraints(root, tree_idx, lattice_basis, space_group_bilbao_cart)
-analyze_swapping_constraints(root, lattice_basis, space_group_bilbao_cart)
+
+all_roots_reconstructed_swapped=[]
+# Iterate through all roots and analyze stabilizer and  swapping constraints
+for tree_idx, root in enumerate(all_roots_sorted):
+    # PHASE 1: Analyze stabilizer constraints
+    stab_result = analyze_stabilizer_constraints(root, tree_idx, lattice_basis, space_group_bilbao_cart)
+    # PHASE 2: Analyze swapping constraints
+    swap_result = analyze_swapping_constraints(root, lattice_basis, space_group_bilbao_cart)
+    all_roots_reconstructed_swapped.append(root)
+
+
