@@ -3655,21 +3655,21 @@ print("=" * 80)
 for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
     propagate_to_all_children(root, type_linear, type_hermitian, tolerance=tol)
 
-# print("\n" + "=" * 80)
-# print("TREE STRUCTURES WITH T_RECONSTRUCTED_SWAP")
-# print("=" * 80)
-#
-# for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
-#     hop = root.hopping
-#
-#     print(f"\n{'─' * 80}")
-#     print(f"Tree {tree_idx}: Distance = {hop.distance:.6f}, "
-#           f"Hopping: {hop.to_atom.position_name} ← {hop.from_atom.position_name}")
-#     print(f"{'─' * 80}")
-#
-#     print_node_with_matrix(root, max_depth=None)
-#
-# print("\n" + "=" * 80)
+print("\n" + "=" * 80)
+print("TREE STRUCTURES WITH T_RECONSTRUCTED_SWAP")
+print("=" * 80)
+
+for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
+    hop = root.hopping
+
+    print(f"\n{'─' * 80}")
+    print(f"Tree {tree_idx}: Distance = {hop.distance:.6f}, "
+          f"Hopping: {hop.to_atom.position_name} ← {hop.from_atom.position_name}")
+    print(f"{'─' * 80}")
+
+    print_node_with_matrix(root, max_depth=None)
+
+print("\n" + "=" * 80)
 
 
 # ==============================================================================
