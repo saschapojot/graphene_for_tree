@@ -130,6 +130,7 @@ class atomIndex:
         # Pre-compute representation matrices for this atom's orbitals
         self.orbital_representations = None
         self._compute_orbital_representations()
+        self.T_tilde_list={}
 
     def _compute_orbital_representations(self):
         """
@@ -199,7 +200,9 @@ class atomIndex:
                 f"atom_type='{self.atom_type}', "
                 f"position_name='{self.position_name}', "
                  f"wyckoff_instance_id='{self.wyckoff_instance_id}', "
-                f"orbitals=[{orbitals_str}])")
+                f"orbitals=[{orbitals_str}]), "
+                f"T_tilde_list={self.T_tilde_list}"
+                )
 
     def get_orbital_names(self):
         """Get list of orbital names for this atom"""
