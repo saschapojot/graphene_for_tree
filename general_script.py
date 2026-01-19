@@ -792,6 +792,7 @@ def generate_atoms_in_unit_cell(parsed_config,space_group_bilbao_cart, lattice_b
     return unit_cell_atoms
 
 
+
 unit_cell_atoms=generate_atoms_in_unit_cell(parsed_config, space_group_bilbao_cart, lattice_basis,origin_cart, repr_s, repr_p, repr_d, repr_f)
 
 # ==============================================================================
@@ -3488,6 +3489,137 @@ def check_vertex_T_reconstructed_swapped_invariant(vertex, lattice_basis, space_
     }
 
 
+def initialize_atom_T_tilde_lists(unit_cell_atoms, roots_list):
+    """
+    Traverses the constraint tree forest and initializes the T_tilde_list
+    for each atom in the unit cell.
+    For every hopping found in the trees (center <- neighbor), it adds an entry
+    to the center atom's T_tilde_list.
+
+    Args:
+        unit_cell_atoms (list): List of atomIndex objects in the unit cell. These are the objects that will be modified.
+        roots_list (list): The forest of constraint trees (roots_grafted_hermitian).
+
+    Returns:
+
+    """
+    # 1. Create a lookup map for O(1) access to unit_cell_atoms by their ID
+    #    This ensures we modify the actual objects in the list, not copies.
+    atom_map = {atom.wyckoff_instance_id: atom for atom in unit_cell_atoms}
+    # 2. Define a recursive helper to traverse the trees
+    def traverse_and_init(vertex):
+        hop = vertex.hopping
+        # Identify the IDs
+        to_id = hop.to_atom.wyckoff_instance_id  # Center atom ID
+        from_id = hop.from_atom.wyckoff_instance_id  # Neighbor atom ID
+        # Construct the key: (Center, Neighbor)
+        key = (to_id, from_id)
+        # Find the actual center atom object in our unit_cell_atoms list
+        if to_id in atom_map:
+            target_atom = atom_map[to_id]
+            # Initialize the key with an empty list if it doesn't exist
+            if key not in target_atom.T_tilde_list:
+                target_atom.T_tilde_list[key] = []
+        else:
+            # This should theoretically not happen if unit_cell_atoms is complete
+            print(f"Warning: Atom ID {to_id} found in hopping but not in unit_cell_atoms list.")
+        # Recursively process all children
+        for child in vertex.children:
+            traverse_and_init(child)
+
+    # 3. Iterate through all roots in the forest
+    #    We filter for actual roots to be safe, though the list should be clean.
+    actual_roots = [root for root in roots_list if root.is_root]
+    for root in actual_roots:
+        traverse_and_init(root)
+
+
+def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list):
+    """
+    Traverses the constraint tree forest and populates the T_tilde_list
+    for each atom in the unit cell.
+
+    For every hopping found (center <- neighbor), it:
+    1. Calculates the phase factor exp(i * k * R_neighbor)
+    2. Multiplies the hopping matrix T_reconstructed_swap by this phase
+    3. Appends the result to the list stored in T_tilde_list[(center_id, neighbor_id)]
+
+    Args:
+        unit_cell_atoms (list): List of atomIndex objects in the unit cell.
+        roots_list (list): The forest of constraint trees (all_roots_reconstructed_swapped).
+
+    Returns:
+        None
+    """
+    # 1. Define k-vector symbols
+    k0, k1, k2 = sp.symbols('k0 k1 k2', real=True)
+
+    # 2. Create a lookup map for O(1) access to unit_cell_atoms
+    atom_map = {atom.wyckoff_instance_id: atom for atom in unit_cell_atoms}
+
+    # 3. Define recursive helper
+    def traverse_and_populate(vertex):
+        hop = vertex.hopping
+
+        # --- A. Validation ---
+        if not hasattr(hop, 'T_reconstructed_swap') or hop.T_reconstructed_swap is None:
+            raise ValueError(f"Vertex {hop.to_atom.wyckoff_instance_id}<-{hop.from_atom.wyckoff_instance_id} "
+                             f"(op={hop.operation_idx}) missing T_reconstructed_swap")
+
+        # --- B. Identify Atoms ---
+        to_id = hop.to_atom.wyckoff_instance_id  # Center atom (destination)
+        from_id = hop.from_atom.wyckoff_instance_id  # Neighbor atom (source)
+
+        # --- C. Calculate Phase Factor ---
+        # The hopping is from a neighbor at cell [n0, n1, n2] to center at [0,0,0]
+        # The Bloch phase factor is exp(i * k * R).
+        # R is the lattice vector of the neighbor relative to the center.
+        n0 = hop.from_atom.n0
+        n1 = hop.from_atom.n1
+        n2 = hop.from_atom.n2
+
+        # Optimization: If cell is [0,0,0], phase is exactly 1
+        if n0 == 0 and n1 == 0 and n2 == 0:
+            phase_factor = sp.Integer(1)
+        else:
+            phase_factor = sp.exp(sp.I * (n0 * k0 + n1 * k1 + n2 * k2))
+
+        # --- D. Construct Term ---
+        # T_tilde_term = T_matrix * phase_factor
+        T_matrix = hop.T_reconstructed_swap
+        term = T_matrix * phase_factor
+
+        # --- E. Store in Dictionary ---
+        if to_id in atom_map:
+            target_atom = atom_map[to_id]
+            # The key identifies the specific pair of basis atoms involved
+            key = (to_id, from_id)
+
+            # Ensure the list exists for this pair (enforced by initialize_atom_T_tilde_lists)
+            if key not in target_atom.T_tilde_list:
+                raise KeyError(
+                    f"Key {key} not found in T_tilde_list for atom {to_id}. "
+                    "Each atom in unit_cell_atoms must be initialized with initialize_atom_T_tilde_lists."
+                )
+
+            # Append the phase-modulated matrix
+            target_atom.T_tilde_list[key].append(term)
+        else:
+            raise ValueError(f"Atom ID {to_id} found in hopping but not in unit_cell_atoms list.")
+
+        # --- F. Recursion ---
+        # Traverse all children to capture derived hoppings
+        for child in vertex.children:
+            traverse_and_populate(child)
+
+    # 4. Iterate through all trees
+    # Filter for actual roots to ensure we start at the top of trees
+    actual_roots = [root for root in roots_list if root.is_root]
+
+    for root in actual_roots:
+        traverse_and_populate(root)
+
+
 
 lattice_basis = np.array(parsed_config['lattice_basis'])
 type_linear="linear"
@@ -3671,83 +3803,85 @@ for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
 
 print("\n" + "=" * 80)
 
-
+initialize_atom_T_tilde_lists(unit_cell_atoms,all_roots_reconstructed_swapped)
+populate_atom_T_tilde_lists(unit_cell_atoms,all_roots_reconstructed_swapped)
+print(unit_cell_atoms)
 # ==============================================================================
 # Check invariance for all nodes - COMPACT VERSION
 # ==============================================================================
-print("\n" + "=" * 80)
-print("CHECKING T_RECONSTRUCTED_SWAP INVARIANCE")
-print("=" * 80)
-
-from collections import deque
-
-total_checked = 0
-total_passed = 0
-total_failed = 0
-failed_details = []
-
-for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
-    # BFS through tree
-    queue = deque([root])
-    tree_passed = 0
-    tree_failed = 0
-
-    while queue:
-        vertex = queue.popleft()
-
-        # Check invariance
-        result = check_vertex_T_reconstructed_swapped_invariant(
-            vertex, lattice_basis, space_group_bilbao_cart, tolerance=tol
-        )
-
-        total_checked += 1
-        hop = vertex.hopping
-        node_type = "ROOT" if vertex.is_root else f"CHILD ({vertex.type})"
-
-        if result['is_invariant']:
-            total_passed += 1
-            tree_passed += 1
-        else:
-            total_failed += 1
-            tree_failed += 1
-
-            # Store failure details
-            failed_details.append({
-                'tree_idx': tree_idx,
-                'node_type': node_type,
-                'to_atom': hop.to_atom.wyckoff_instance_id,
-                'from_atom': hop.from_atom.wyckoff_instance_id,
-                'op_idx': hop.operation_idx,
-                'max_diff': result['max_diff'],
-                'violations': result['violations'],
-                'error': result.get('error', None)
-            })
-
-        # Add children to queue
-        queue.extend(vertex.children)
-
-    # Tree summary
-    print(f"Tree {tree_idx}: {tree_passed} passed, {tree_failed} failed")
-
-# Overall summary
-print("\n" + "─" * 80)
-print(f"TOTAL: {total_passed}/{total_checked} nodes passed")
-
-if total_failed == 0:
-    print("✓ All nodes passed invariance check!")
-else:
-    print(f"✗ {total_failed} nodes failed!\n")
-
-    # Print failure details
-    print("Failed nodes:")
-    for fail in failed_details:
-        print(f"  Tree {fail['tree_idx']}, {fail['node_type']}: "
-              f"{fail['to_atom']} ← {fail['from_atom']}, op={fail['op_idx']}")
-        if fail['error']:
-            print(f"    Error: {fail['error']}")
-        else:
-            print(f"    Max difference: {fail['max_diff']:.6e}")
-            if fail['violations']:
-                print(f"    Violations in operations: {[op for op, _ in fail['violations']]}")
-
-print("=" * 80)
+# print("\n" + "=" * 80)
+# print("CHECKING T_RECONSTRUCTED_SWAP INVARIANCE")
+# print("=" * 80)
+#
+# from collections import deque
+#
+# total_checked = 0
+# total_passed = 0
+# total_failed = 0
+# failed_details = []
+#
+# for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
+#     # BFS through tree
+#     queue = deque([root])
+#     tree_passed = 0
+#     tree_failed = 0
+#
+#     while queue:
+#         vertex = queue.popleft()
+#
+#         # Check invariance
+#         result = check_vertex_T_reconstructed_swapped_invariant(
+#             vertex, lattice_basis, space_group_bilbao_cart, tolerance=tol
+#         )
+#
+#         total_checked += 1
+#         hop = vertex.hopping
+#         node_type = "ROOT" if vertex.is_root else f"CHILD ({vertex.type})"
+#
+#         if result['is_invariant']:
+#             total_passed += 1
+#             tree_passed += 1
+#         else:
+#             total_failed += 1
+#             tree_failed += 1
+#
+#             # Store failure details
+#             failed_details.append({
+#                 'tree_idx': tree_idx,
+#                 'node_type': node_type,
+#                 'to_atom': hop.to_atom.wyckoff_instance_id,
+#                 'from_atom': hop.from_atom.wyckoff_instance_id,
+#                 'op_idx': hop.operation_idx,
+#                 'max_diff': result['max_diff'],
+#                 'violations': result['violations'],
+#                 'error': result.get('error', None)
+#             })
+#
+#         # Add children to queue
+#         queue.extend(vertex.children)
+#
+#     # Tree summary
+#     print(f"Tree {tree_idx}: {tree_passed} passed, {tree_failed} failed")
+#
+# # Overall summary
+# print("\n" + "─" * 80)
+# print(f"TOTAL: {total_passed}/{total_checked} nodes passed")
+#
+# if total_failed == 0:
+#     print("✓ All nodes passed invariance check!")
+# else:
+#     print(f"✗ {total_failed} nodes failed!\n")
+#
+#     # Print failure details
+#     print("Failed nodes:")
+#     for fail in failed_details:
+#         print(f"  Tree {fail['tree_idx']}, {fail['node_type']}: "
+#               f"{fail['to_atom']} ← {fail['from_atom']}, op={fail['op_idx']}")
+#         if fail['error']:
+#             print(f"    Error: {fail['error']}")
+#         else:
+#             print(f"    Max difference: {fail['max_diff']:.6e}")
+#             if fail['violations']:
+#                 print(f"    Violations in operations: {[op for op, _ in fail['violations']]}")
+#
+# print("=" * 80)
