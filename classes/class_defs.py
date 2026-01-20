@@ -738,7 +738,7 @@ class T_tilde_total():
         # is_hermitian = (self.total_hamiltonian == H_dagger)
         diff =sp.simplify( self.total_hamiltonian - H_dagger)
         #TODO: should extract coefficients
-        is_hermitian=sp.simplify(diff).norm()<tolerence
+        is_hermitian=diff.norm()<tolerence
         if is_hermitian:
             print("✓ Hamiltonian is Hermitian")
         else:
