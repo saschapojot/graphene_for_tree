@@ -3854,7 +3854,7 @@ sum_atom_T_tilde_lists(unit_cell_atoms)
 
 T_tilde_tot_obj=T_tilde_total(unit_cell_atoms)
 T_tilde_tot_obj.construct_total_hamiltonian()
-T_tilde_tot_obj.print_hamiltonian_structure()
+
 T_tilde_tot_obj.verify_hermiticity()
 
 # grand_total_matrices = 0
