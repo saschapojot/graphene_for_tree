@@ -13,7 +13,7 @@ import base64
 sp.init_printing(use_unicode=False, wrap_line=False)
 
 #self defined
-from classes.class_defs import frac_to_cartesian,atomIndex,hopping,vertex
+from classes.class_defs import frac_to_cartesian, atomIndex, hopping, vertex, T_tilde_total
 
 #this script computes for general
 
@@ -3504,7 +3504,7 @@ def initialize_atom_T_tilde_lists(unit_cell_atoms, roots_list):
 
     """
     # 1. Create a lookup map for O(1) access to unit_cell_atoms by their ID
-    #    This ensures we modify the actual objects in the list, not copies.
+    ## Note: Values are references to the objects in unit_cell_atoms, not copies.
     atom_map = {atom.wyckoff_instance_id: atom for atom in unit_cell_atoms}
     # 2. Define a recursive helper to traverse the trees
     def traverse_and_init(vertex):
@@ -3521,8 +3521,8 @@ def initialize_atom_T_tilde_lists(unit_cell_atoms, roots_list):
             if key not in target_atom.T_tilde_list:
                 target_atom.T_tilde_list[key] = []
         else:
-            # This should theoretically not happen if unit_cell_atoms is complete
-            print(f"Warning: Atom ID {to_id} found in hopping but not in unit_cell_atoms list.")
+            # This indicates a critical data inconsistency
+            raise ValueError(f"Atom ID {to_id} found in hopping data but not in unit_cell_atoms list.")
         # Recursively process all children
         for child in vertex.children:
             traverse_and_init(child)
@@ -3530,6 +3530,12 @@ def initialize_atom_T_tilde_lists(unit_cell_atoms, roots_list):
     # 3. Iterate through all roots in the forest
     #    We filter for actual roots to be safe, though the list should be clean.
     actual_roots = [root for root in roots_list if root.is_root]
+    if len(actual_roots)!= len(roots_list):
+        # Calculate the difference to provide a helpful error message
+        missing_count = len(roots_list) - len(actual_roots)
+        raise ValueError(
+            f"Inconsistency detected: {missing_count} item(s) in 'roots_list' are not marked as roots (is_root=False)."
+        )
     for root in actual_roots:
         traverse_and_init(root)
 
@@ -3554,7 +3560,7 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list):
     # 1. Define k-vector symbols
     k0, k1, k2 = sp.symbols('k0 k1 k2', real=True)
 
-    # 2. Create a lookup map for O(1) access to unit_cell_atoms
+    #2. Create a lookup map. Note: 'atom' here is a reference to the object in unit_cell_atoms.
     atom_map = {atom.wyckoff_instance_id: atom for atom in unit_cell_atoms}
 
     # 3. Define recursive helper
@@ -3615,10 +3621,49 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list):
     # 4. Iterate through all trees
     # Filter for actual roots to ensure we start at the top of trees
     actual_roots = [root for root in roots_list if root.is_root]
+    if len(actual_roots) != len(roots_list):
+        missing_count = len(roots_list) - len(actual_roots)
+        raise ValueError(
+            f"Inconsistency detected: {missing_count} item(s) in 'roots_list' are not marked as roots (is_root=False)."
+        )
 
     for root in actual_roots:
         traverse_and_populate(root)
 
+
+def sum_atom_T_tilde_lists(unit_cell_atoms):
+    """
+    Iterates through each atom in the unit cell and sums the phase-modulated
+    matrices stored in T_tilde_list. The result is stored in T_tilde_val.
+    For each key (center_id, neighbor_id) in atom.T_tilde_list:
+        T_tilde_val[key] = Sum(T_tilde_list[key])
+
+    Args:
+        unit_cell_atoms:  (list): List of atomIndex objects. Modified in-place.
+
+
+    Returns:
+
+    """
+    for i, atom in enumerate(unit_cell_atoms):
+        # Iterate over each neighbor interaction (key is (to_id, from_id))
+        for key, matrix_list in atom.T_tilde_list.items():
+            if not matrix_list:
+                raise ValueError(
+                    f"Error processing Atom {atom.wyckoff_instance_id}: "
+                    f"The interaction key {key} exists in T_tilde_list but contains no matrices to sum."
+                )
+            # Get dimensions from the first matrix to create a matching zero matrix
+            rows, cols = matrix_list[0].shape
+            #  Initialize total_matrix as a zero matrix of the same size
+            total_matrix = sp.zeros(rows, cols)
+            #  Sum all matrices
+            for matrix in matrix_list:
+                total_matrix += matrix
+            #  Simplify the result
+            total_matrix_simplified = sp.simplify(total_matrix)
+            # Store in T_tilde_val
+            atom.T_tilde_val[key] = total_matrix_simplified
 
 
 lattice_basis = np.array(parsed_config['lattice_basis'])
@@ -3805,7 +3850,33 @@ print("\n" + "=" * 80)
 
 initialize_atom_T_tilde_lists(unit_cell_atoms,all_roots_reconstructed_swapped)
 populate_atom_T_tilde_lists(unit_cell_atoms,all_roots_reconstructed_swapped)
-print(unit_cell_atoms)
+sum_atom_T_tilde_lists(unit_cell_atoms)
+
+T_tilde_tot_obj=T_tilde_total(unit_cell_atoms)
+T_tilde_tot_obj.construct_total_hamiltonian()
+T_tilde_tot_obj.print_hamiltonian_structure()
+T_tilde_tot_obj.verify_hermiticity()
+
+# grand_total_matrices = 0
+#
+# print(f"{'Atom ID':<20} | {'Atom Type':<10} | {'Matrix Count (Neighbors)':<25}")
+# print("-" * 60)
+#
+# for atom in unit_cell_atoms:
+    # T_tilde_list is a dictionary:
+    # Keys = (center_atom, neighbor_atom) pairs
+    # Values = List of symbolic terms
+
+    # The number of matrices is the number of keys in this dictionary
+    # (i.e., how many unique neighbors this atom hops to)
+    # for matrix_list in atom.T_tilde_list.values():
+    #     grand_total_matrices+=len(matrix_list)
+
+
+
+# print("-" * 60)
+# print(f"{'TOTAL MATRICES IN SYSTEM':<33} : {grand_total_matrices}")
+# print("=" * 50 + "\n")
 # ==============================================================================
 # Check invariance for all nodes - COMPACT VERSION
 # ==============================================================================

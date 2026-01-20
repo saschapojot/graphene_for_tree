@@ -2,6 +2,7 @@ import numpy as np
 from copy import deepcopy
 from scipy.linalg import block_diag
 import sympy as sp
+import re
 
 def orbital_to_submatrix(orbitals, Vs, Vp, Vd, Vf):
     """
@@ -102,7 +103,7 @@ class atomIndex:
 
         # parse Configuration to find orbitals
         found_atom = False
-        self.orbitals = []
+        self.orbitals = []#TODO: sorting criteria
         self.atom_type = None  # To be determined from config
 
         wyckoff_positions = parsed_config['Wyckoff_positions']
@@ -131,6 +132,7 @@ class atomIndex:
         self.orbital_representations = None
         self._compute_orbital_representations()
         self.T_tilde_list={}
+        self.T_tilde_val={}
 
     def _compute_orbital_representations(self):
         """
@@ -201,7 +203,7 @@ class atomIndex:
                 f"position_name='{self.position_name}', "
                  f"wyckoff_instance_id='{self.wyckoff_instance_id}', "
                 f"orbitals=[{orbitals_str}]), "
-                f"T_tilde_list={self.T_tilde_list}"
+                f"T_tilde_val={self.T_tilde_val}"
                 )
 
     def get_orbital_names(self):
@@ -505,3 +507,244 @@ class vertex():
                 f"op={self.hopping.operation_idx}, "
                 f"parent={parent_str}, "
                 f"children={len(self.children)})")
+
+
+
+class T_tilde_total():
+    """
+     this class stores the k-space Hamiltonian blocks, and constructs the total k-space Hamiltonian
+    """
+
+    def __init__(self, unit_cell_atoms):
+        """
+
+        Args:
+            unit_cell_atoms: unit_cell_atoms: unit_cell_atoms contain constructed T blocks, it is deep-copied to decouple
+        """
+        self.unit_cell_atoms = deepcopy(unit_cell_atoms)
+        # Flattened dictionary to store all T_tilde_val blocks from all atoms
+        # Key: (to_atom_id, from_atom_id), Value: SymPy Matrix
+        self.T_tilde_from_unit_cell_atoms = {}
+        # Iterate through each atom in the unit cell
+        for atom in self.unit_cell_atoms:
+            # Iterate through the T_tilde_val dictionary of the atom
+            # atom.T_tilde_val contains the summed k-space hopping matrices
+            for key, matrix in atom.T_tilde_val.items():
+                # Add the matrix to the flattened dictionary
+                self.T_tilde_from_unit_cell_atoms[key] = matrix
+
+        self.complete_hermitian_blocks()
+        # Initialize attributes for block matrix construction
+        self.total_hamiltonian = None  # The final assembled matrix
+        self.hamiltonian_dimension = None  # Total dimension of the Hamiltonian
+        self.sorted_wyckoff_instance_ids =None
+
+    def complete_hermitian_blocks(self):
+        """
+        Iterates through all atoms and ensures that for every block H_ij,
+        the corresponding H_ji = H_ij^dagger exists in the total Hamiltonian.
+        Returns:
+
+        """
+        for atom in self.unit_cell_atoms:
+            # Iterate through the T_tilde_val dictionary of the atom
+            # key is (this_wyckoff_instance_id, other_wyckoff_instance_id)
+            for (this_id, other_id), matrix in atom.T_tilde_val.items():
+                # Swap the key to represent the conjugate block
+                swapped_key = (other_id, this_id)
+                # Check if the swapped key exists in the master dictionary
+                if swapped_key not in self.T_tilde_from_unit_cell_atoms:
+                    # print(f"swapped_key={swapped_key}")
+                    # If not, add it with the Hermitian conjugate of the matrix
+                    self.T_tilde_from_unit_cell_atoms[swapped_key] = matrix.H
+
+    def sort_wyckoff_instance_ids(self):
+        """
+        Sort wyckoff_instance_ids using natural sorting that respects the structure:
+        <Element><WyckoffPosition><AtomIndex>
+        Format examples:
+        - 'C00': Carbon, Wyckoff position 0, atom index 0
+        - 'Ca01': Calcium, Wyckoff position 0, atom index 1
+        - 'Ca10': Calcium, Wyckoff position 1, atom index 0
+
+        Sorting priority:
+        1. Element symbol (alphabetically)
+        2. Wyckoff position (numerically)
+        3. Atom index (numerically)
+
+        Examples:
+            Input:  ['Ca01', 'C00', 'Ca10', 'Ca00', 'C01']
+            Output: ['C00', 'C01', 'Ca00', 'Ca01', 'Ca10']
+            Grouped by element → position → index:
+            C:  position 0: [C00, C01]
+            Ca: position 0: [Ca00, Ca01]
+                position 1: [Ca10]
+
+        Returns:
+            list: Naturally sorted list of wyckoff_instance_ids
+        TODO: name convention in conf file should be optimized
+
+        """
+
+        def parse_wyckoff_id(wyckoff_id):
+            """
+            Parse wyckoff_instance_id into (element, position, index).
+            Args:
+
+                wyckoff_id: String like 'Ca01', 'C00', 'N10'
+
+            Returns:
+                 tuple: (element_str, position_int, index_int)
+            Examples:
+                'Ca01' → ('Ca', 0, 1)
+                'C00'  → ('C', 0, 0)
+                'N10'  → ('N', 1, 0)
+
+            """
+            # Match: one or more letters, followed by digits
+            match = re.match(r'^([A-Za-z]+)(\d+)$', wyckoff_id)
+            if not match:
+                raise ValueError(f"Invalid wyckoff_instance_id format: {wyckoff_id}")
+            element = match.group(1)
+            digits = match.group(2)
+            # Assuming single-digit Wyckoff position, rest is atom index
+            # 'Ca01' → element='Ca', digits='01' → position=0, index=1
+            if len(digits) < 2:
+                raise ValueError(f"Expected at least 2 digits in wyckoff_instance_id: {wyckoff_id}")
+            position = int(digits[0])  # First digit is Wyckoff position
+            index = int(digits[1:])  # Remaining digits are atom index
+            return (element, position, index)
+
+        # Extract unique wyckoff_instance_ids from unit_cell_atoms
+        wyckoff_instance_ids = [atom.wyckoff_instance_id for atom in self.unit_cell_atoms]
+        # Sort by (element, position, index) tuple
+        sorted_ids = sorted(wyckoff_instance_ids, key=parse_wyckoff_id)
+        self.sorted_wyckoff_instance_ids = sorted_ids
+        return sorted_ids
+
+    def construct_total_hamiltonian(self):
+        """
+        Construct the total k-space Hamiltonian matrix from block matrices.
+        The Hamiltonian is block-structured based on wyckoff_instance_ids:
+
+        H_total = | H_00  H_01  H_02  ... |
+                 | H_10  H_11  H_12  ... |
+                | H_20  H_21  H_22  ... |
+               | ...   ...   ...   ... |
+        where H_ij is the hopping block from atom j to atom i.
+
+        This method directly assembles the block matrices using SymPy's block matrix
+        construction
+
+        Workflow:
+        1. Sort wyckoff_instance_ids to establish consistent ordering
+        2. Build a 2D list of block matrices
+        3. Use sp.BlockMatrix to construct the total Hamiltonian
+
+        Returns:
+             sympy.Matrix: Complete k-space Hamiltonian matrix
+        """
+        # Step 1: Sort wyckoff_instance_ids to establish row/column ordering
+        self.sort_wyckoff_instance_ids()
+        # Step 2: Calculate block dimensions for each wyckoff_instance_id
+        block_dimensions = {}
+        for atom in self.unit_cell_atoms:
+            wyckoff_id = atom.wyckoff_instance_id
+            num_orbitals = atom.num_orbitals
+            block_dimensions[wyckoff_id] = num_orbitals
+        # Step 3: Calculate total Hamiltonian dimension
+        self.hamiltonian_dimension = sum(block_dimensions.values())
+        # print(f"self.hamiltonian_dimension={self.hamiltonian_dimension}")
+        # Step 4: Build 2D list of block matrices
+        # blocks[i][j] corresponds to H[to_id_i, from_id_j]
+        n_atoms = len(self.sorted_wyckoff_instance_ids)
+        blocks = []
+        for i, to_id in enumerate(self.sorted_wyckoff_instance_ids):
+            row_blocks = []
+            for j, from_id in enumerate(self.sorted_wyckoff_instance_ids):
+                key = (to_id, from_id)
+                # Check if block exists in dictionary
+                if key in self.T_tilde_from_unit_cell_atoms:
+                    # Use existing block matrix
+                    block = self.T_tilde_from_unit_cell_atoms[key]
+                else:
+                    # Required block is missing - this should not happen
+                    raise KeyError(
+                        f"Missing required block ({to_id}, {from_id}) in T_tilde_from_unit_cell_atoms. "
+                        f"This indicates incomplete hopping data or a bug in complete_hermitian_blocks(). "
+                        f"Available keys: {list(self.T_tilde_from_unit_cell_atoms.keys())}"
+                    )
+                row_blocks.append(block)
+            blocks.append(row_blocks)
+
+        block_matrix = sp.BlockMatrix(blocks)
+        # Step 6: Convert BlockMatrix to regular Matrix for easier manipulation
+        self.total_hamiltonian = sp.Matrix(block_matrix)
+        return self.total_hamiltonian
+
+    def print_hamiltonian_structure(self):
+        if self.sorted_wyckoff_instance_ids is None:
+            self.sort_wyckoff_instance_ids()
+
+            # Get block dimensions
+        block_dimensions = {}
+        for atom in self.unit_cell_atoms:
+            block_dimensions[atom.wyckoff_instance_id] = atom.num_orbitals
+
+        print("Hamiltonian Block Structure:")
+        print("=" * 50)
+        print(f"Sorted IDs: {self.sorted_wyckoff_instance_ids}")
+
+        # Print dimensions
+        dim_str = ", ".join([f"{wid}({block_dimensions[wid]})"
+                             for wid in self.sorted_wyckoff_instance_ids])
+        print(f"Block dimensions: {dim_str}")
+        print(f"Total dimension: {sum(block_dimensions.values())}")
+        print()
+
+        # Print block existence matrix
+        print("Block matrix (✓ = exists, · = zero):")
+
+        # Header
+        header = "      " + "  ".join([f"{wid:4s}" for wid in self.sorted_wyckoff_instance_ids])
+        print(header)
+
+        # Rows
+        for to_id in self.sorted_wyckoff_instance_ids:
+            row_str = f"{to_id:4s}  "
+            for from_id in self.sorted_wyckoff_instance_ids:
+                if (to_id, from_id) in self.T_tilde_from_unit_cell_atoms:
+                    row_str += "✓    "
+                else:
+                    row_str += "·    "
+            print(row_str)
+        print()
+
+    def verify_hermiticity(self,tolerence=1e-3):
+        """
+        Verify that the constructed Hamiltonian is Hermitian: H† = H
+
+        Returns:
+            bool: True if Hamiltonian is Hermitian (within numerical precision)
+
+        Raises:
+            ValueError: If total_hamiltonian has not been constructed yet
+        """
+        if self.total_hamiltonian is None:
+            raise ValueError("Hamiltonian not constructed yet. Call construct_total_hamiltonian() first.")
+
+        # Check if H = H†
+        H_dagger = self.total_hamiltonian.H
+        # is_hermitian = (self.total_hamiltonian == H_dagger)
+        diff =sp.simplify( self.total_hamiltonian - H_dagger)
+        is_hermitian=sp.simplify(diff).norm()<tolerence
+        if is_hermitian:
+            print("✓ Hamiltonian is Hermitian")
+        else:
+
+            print("✗ Warning: Hamiltonian is NOT Hermitian!")
+            # Optionally print the difference
+            diff = self.total_hamiltonian - H_dagger
+            print(f"Max difference: {sp.simplify(diff).norm()}")
+
+        return is_hermitian
