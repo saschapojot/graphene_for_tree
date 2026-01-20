@@ -6,7 +6,7 @@ import json
 import numpy as np
 from datetime import datetime
 from copy import deepcopy
-
+from pathlib import Path
 import sympy as sp
 import pickle
 import base64
@@ -3586,7 +3586,7 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list):
 
         # Optimization: If cell is [0,0,0], phase is exactly 1
         if n0 == 0 and n1 == 0 and n2 == 0:
-            phase_factor = sp.Integer(1)
+            phase_factor = 1
         else:
             phase_factor = sp.exp(sp.I * (n0 * k0 + n1 * k1 + n2 * k2))
 
@@ -3853,9 +3853,12 @@ populate_atom_T_tilde_lists(unit_cell_atoms,all_roots_reconstructed_swapped)
 sum_atom_T_tilde_lists(unit_cell_atoms)
 
 T_tilde_tot_obj=T_tilde_total(unit_cell_atoms)
-T_tilde_tot_obj.construct_total_hamiltonian()
+H=T_tilde_tot_obj.construct_total_hamiltonian()
 
-T_tilde_tot_obj.verify_hermiticity()
+config_file_path = parsed_config["config_file_path"]
+config_dir = Path(config_file_path).parent
+out_matrix_file_name=str(config_dir)+"/H.txt"
+T_tilde_tot_obj.write_hamiltonian_to_latex(out_matrix_file_name)
 
 # grand_total_matrices = 0
 #

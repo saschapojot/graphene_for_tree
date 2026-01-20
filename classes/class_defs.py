@@ -680,72 +680,262 @@ class T_tilde_total():
         block_matrix = sp.BlockMatrix(blocks)
         # Step 6: Convert BlockMatrix to regular Matrix for easier manipulation
         self.total_hamiltonian = sp.Matrix(block_matrix)
+        self.total_hamiltonian=sp.simplify(self.total_hamiltonian)
         return self.total_hamiltonian
 
-    def print_hamiltonian_structure(self):
-        if self.sorted_wyckoff_instance_ids is None:
-            self.sort_wyckoff_instance_ids()
-
-            # Get block dimensions
-        block_dimensions = {}
-        for atom in self.unit_cell_atoms:
-            block_dimensions[atom.wyckoff_instance_id] = atom.num_orbitals
-
-        print("Hamiltonian Block Structure:")
-        print("=" * 50)
-        print(f"Sorted IDs: {self.sorted_wyckoff_instance_ids}")
-
-        # Print dimensions
-        dim_str = ", ".join([f"{wid}({block_dimensions[wid]})"
-                             for wid in self.sorted_wyckoff_instance_ids])
-        print(f"Block dimensions: {dim_str}")
-        print(f"Total dimension: {sum(block_dimensions.values())}")
-        print()
-
-        # Print block existence matrix
-        print("Block matrix (✓ = exists, · = zero):")
-
-        # Header
-        header = "      " + "  ".join([f"{wid:4s}" for wid in self.sorted_wyckoff_instance_ids])
-        print(header)
-
-        # Rows
-        for to_id in self.sorted_wyckoff_instance_ids:
-            row_str = f"{to_id:4s}  "
-            for from_id in self.sorted_wyckoff_instance_ids:
-                if (to_id, from_id) in self.T_tilde_from_unit_cell_atoms:
-                    row_str += "✓    "
-                else:
-                    row_str += "·    "
-            print(row_str)
-        print()
-
-    def verify_hermiticity(self,tolerence=1e-3):
+    def _fix_latex_subscripts(self, latex_str):
         """
-        Verify that the constructed Hamiltonian is Hermitian: H† = H
+        Fix LaTeX double-subscript errors by converting re_XXX and im_XXX to Re(XXX) and Im(XXX).
+
+        Transforms:
+            re_T^{0}_{2s,2s} → \operatorname{Re}(T^{0}_{2s,2s})
+            im_T^{0}_{2s,2s} → \operatorname{Im}(T^{0}_{2s,2s})
+            \overline{re_T^{0}_{2s,2s}} → \overline{\operatorname{Re}(T^{0}_{2s,2s})}
+
+        Args:
+            latex_str: LaTeX string with potential re_XXX and im_XXX symbols
 
         Returns:
-            bool: True if Hamiltonian is Hermitian (within numerical precision)
-
-        Raises:
-            ValueError: If total_hamiltonian has not been constructed yet
+            Fixed LaTeX string
         """
-        if self.total_hamiltonian is None:
-            raise ValueError("Hamiltonian not constructed yet. Call construct_total_hamiltonian() first.")
+        import re
 
-        # Check if H = H†
-        H_dagger = self.total_hamiltonian.H
-        # is_hermitian = (self.total_hamiltonian == H_dagger)
-        diff =sp.simplify( self.total_hamiltonian - H_dagger)
-        #TODO: should extract coefficients
-        is_hermitian=diff.norm()<tolerence
-        if is_hermitian:
-            print("✓ Hamiltonian is Hermitian")
+        # Pattern to match re_SYMBOL or im_SYMBOL where SYMBOL can contain ^{...} and _{...}
+        # This captures the entire symbol including superscripts and subscripts
+
+        # Match re_ or im_ followed by anything up to the next space, operator, or delimiter
+        # We need to be careful to capture the full symbol including ^{...} and _{...}
+
+        def replace_re_im(match):
+            """Helper function to replace matched re_/im_ patterns"""
+            prefix = match.group(1)  # 're' or 'im'
+            symbol = match.group(2)  # The rest of the symbol
+
+            # Determine the LaTeX operator name
+            if prefix == 're':
+                op_name = r'\operatorname{Re}'
+            else:  # prefix == 'im'
+                op_name = r'\operatorname{Im}'
+
+            return f"{op_name}({symbol})"
+
+        # Pattern explanation:
+        # (re|im)_          : Match 're_' or 'im_'
+        # ([A-Za-z]+        : Start capturing: one or more letters (symbol name)
+        # (?:\^{[^}]+})*    : Zero or more superscripts ^{...}
+        # (?:_{[^}]+})*     : Zero or more subscripts _{...}
+        # )                 : End capturing
+        pattern = r'(re|im)_([A-Za-z]+(?:\^{[^}]+})*(?:_{[^}]+})*)'
+
+        # Apply replacement
+        fixed_str = re.sub(pattern, replace_re_im, latex_str)
+
+        return fixed_str
+
+    def write_hamiltonian_to_latex(self,filename,precision=3):
+        H = sp.simplify(self.total_hamiltonian)
+        # Convert to LaTeX using SymPy's latex() function
+
+        H = self.round_matrix_coefficients(H, precision)
+        H=sp.simplify(H)
+        latex_str = sp.latex(H, mat_delim='[')
+        latex_str = self._fix_latex_subscripts(latex_str)
+        # Write to file
+        with open(filename, 'w') as f:
+            f.write(latex_str)
+
+    def round_matrix_coefficients(self, matrix, precision):
+        """
+        Round all numerical coefficients in a symbolic matrix to specified precision.
+        """
+        rows, cols = matrix.shape
+        rounded_matrix = sp.zeros(rows, cols)
+
+        for i in range(rows):
+            for j in range(cols):
+                rounded_matrix[i, j] = self.round_expression_coefficients(matrix[i, j], precision)
+
+        return rounded_matrix
+
+    def round_expression_coefficients(self, expr, precision):
+        """
+        Round numerical coefficients in a SymPy expression to specified precision.
+
+        This recursively processes the entire expression tree.
+        """
+        if expr == 0 or expr is sp.S.Zero:
+            return sp.S.Zero
+
+        # If it's a number, round it directly
+        if expr.is_Number:
+            return self._round_number(expr, precision)
+
+        # If it's an addition, round each term separately
+        if isinstance(expr, sp.Add):
+            rounded_terms = []
+            for term in expr.args:
+                rounded_term = self.round_expression_coefficients(term, precision)
+                if rounded_term != sp.S.Zero:  # Skip zero terms
+                    rounded_terms.append(rounded_term)
+
+            if len(rounded_terms) == 0:
+                return sp.S.Zero
+            elif len(rounded_terms) == 1:
+                return rounded_terms[0]
+            else:
+                return sp.Add(*rounded_terms)
+
+        # If it's a multiplication, process it specially
+        if isinstance(expr, sp.Mul):
+            return self._round_multiplication(expr, precision)
+
+        # If it's a power, process base and exponent
+        if isinstance(expr, sp.Pow):
+            base_rounded = self.round_expression_coefficients(expr.base, precision)
+            exp_rounded = self.round_expression_coefficients(expr.exp, precision)
+            return base_rounded ** exp_rounded
+
+        # For other types (like Symbol), return as-is
+        return expr
+
+    def _round_number(self, num, precision):
+        """Helper to round a SymPy number to specified precision."""
+        threshold = 10 ** (-precision - 2)  # Threshold for treating as zero
+
+        if num.is_real:
+            val = float(num)
+            if abs(val) < threshold:
+                return sp.S.Zero
+            rounded_val = round(val, precision)
+            # Return as integer if it's a whole number
+            if abs(rounded_val - round(rounded_val)) < threshold:
+                return sp.Integer(int(round(rounded_val)))
+            return sp.Float(rounded_val, precision)
+
+        elif num.is_complex:
+            real_part = float(sp.re(num))
+            imag_part = float(sp.im(num))
+
+            # Round and check threshold for real part
+            if abs(real_part) < threshold:
+                real_rounded = 0.0
+            else:
+                real_rounded = round(real_part, precision)
+
+            # Round and check threshold for imaginary part
+            if abs(imag_part) < threshold:
+                imag_rounded = 0.0
+            else:
+                imag_rounded = round(imag_part, precision)
+
+            # Construct the result
+            if real_rounded == 0.0 and imag_rounded == 0.0:
+                return sp.S.Zero
+            elif imag_rounded == 0.0:
+                if abs(real_rounded - round(real_rounded)) < threshold:
+                    return sp.Integer(int(round(real_rounded)))
+                return sp.Float(real_rounded, precision)
+            elif real_rounded == 0.0:
+                if abs(imag_rounded - round(imag_rounded)) < threshold:
+                    return sp.I * sp.Integer(int(round(imag_rounded)))
+                return sp.I * sp.Float(imag_rounded, precision)
+            else:
+                result = sp.S.Zero
+                if abs(real_rounded - round(real_rounded)) < threshold:
+                    result += sp.Integer(int(round(real_rounded)))
+                else:
+                    result += sp.Float(real_rounded, precision)
+
+                if abs(imag_rounded - round(imag_rounded)) < threshold:
+                    result += sp.I * sp.Integer(int(round(imag_rounded)))
+                else:
+                    result += sp.I * sp.Float(imag_rounded, precision)
+                return result
+
         else:
+            return num
 
-            print("✗ Warning: Hamiltonian is NOT Hermitian!")
-            # Optionally print the difference
-            diff = self.total_hamiltonian - H_dagger
-            print(f"Max difference: {sp.simplify(diff).norm()}")
+    def _round_multiplication(self, expr, precision):
+        """
+        Round coefficients in a multiplication expression.
 
-        return is_hermitian
+        Strategy: Extract ALL numerical factors, round their product,
+        then multiply by all symbolic factors.
+        """
+        # Separate all arguments into numerical and symbolic
+        numerical_factors = []
+        symbolic_factors = []
+
+        for arg in expr.args:
+            if arg.is_Number:
+                numerical_factors.append(arg)
+            else:
+                # Recursively process non-numerical arguments
+                # (they might contain nested multiplications with numbers)
+                processed_arg = self.round_expression_coefficients(arg, precision)
+                if processed_arg != sp.S.Zero:
+                    symbolic_factors.append(processed_arg)
+
+        # Multiply all numerical factors together
+        if len(numerical_factors) == 0:
+            numerical_coeff = sp.S.One
+        else:
+            numerical_coeff = sp.S.One
+            for num in numerical_factors:
+                numerical_coeff *= num
+
+        # Round the combined numerical coefficient
+        rounded_coeff = self._round_number(numerical_coeff, precision)
+
+        # If coefficient rounded to zero, return zero
+        if rounded_coeff == sp.S.Zero:
+            return sp.S.Zero
+
+        # Reconstruct the expression
+        if len(symbolic_factors) == 0:
+            # Only numerical part
+            return rounded_coeff
+        elif rounded_coeff == sp.S.One:
+            # Only symbolic part
+            if len(symbolic_factors) == 1:
+                return symbolic_factors[0]
+            else:
+                return sp.Mul(*symbolic_factors)
+        else:
+            # Both numerical and symbolic parts
+            if len(symbolic_factors) == 1:
+                return rounded_coeff * symbolic_factors[0]
+            else:
+                return rounded_coeff * sp.Mul(*symbolic_factors)
+
+    # def verify_hermiticity(self,tolerence=1e-3):
+    #     """
+    #     Verify that the constructed Hamiltonian is Hermitian: H† = H
+    #
+    #     Returns:
+    #         bool: True if Hamiltonian is Hermitian (within numerical precision)
+    #
+    #     Raises:
+    #         ValueError: If total_hamiltonian has not been constructed yet
+    #     """
+    #     if self.total_hamiltonian is None:
+    #         raise ValueError("Hamiltonian not constructed yet. Call construct_total_hamiltonian() first.")
+    #
+    #     # Check if H = H†
+    #     H_dagger = self.total_hamiltonian.H
+    #     # is_hermitian = (self.total_hamiltonian == H_dagger)
+    #     diff =sp.simplify( self.total_hamiltonian - H_dagger)
+    #     #TODO: should extract coefficients
+    #
+    #     print(f"diff.norm()={diff.norm()<tolerence}")
+        # is_hermitian=(diff.norm()<tolerence)
+        # if is_hermitian:
+        #     print("✓ Hamiltonian is Hermitian")
+        # else:
+        #
+        #     print("✗ Warning: Hamiltonian is NOT Hermitian!")
+        #     # Optionally print the difference
+        #     diff = self.total_hamiltonian - H_dagger
+        #     print(f"Max difference: {sp.simplify(diff).norm()}")
+        #
+        # return is_hermitian
