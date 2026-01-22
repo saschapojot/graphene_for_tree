@@ -737,7 +737,7 @@ class T_tilde_total():
         # Convert to LaTeX using SymPy's latex() function
 
         H = self.round_matrix_coefficients(H, precision)
-        H=sp.simplify(H)
+        H=sp.expand(H)
         latex_str = sp.latex(H, mat_delim='[')
         latex_str = self._fix_latex_subscripts(latex_str)
         # Write to file
