@@ -3,6 +3,7 @@ from copy import deepcopy
 from scipy.linalg import block_diag
 import sympy as sp
 import re
+from datetime import datetime
 
 def orbital_to_submatrix(orbitals, Vs, Vp, Vd, Vf):
     """
@@ -538,6 +539,7 @@ class T_tilde_total():
         self.total_hamiltonian = None  # The final assembled matrix
         self.hamiltonian_dimension = None  # Total dimension of the Hamiltonian
         self.sorted_wyckoff_instance_ids =None
+        self.block_dimensions=None
 
     def complete_hermitian_blocks(self):
         """
@@ -653,6 +655,7 @@ class T_tilde_total():
             num_orbitals = atom.num_orbitals
             block_dimensions[wyckoff_id] = num_orbitals
         # Step 3: Calculate total Hamiltonian dimension
+        self.block_dimensions=block_dimensions
         self.hamiltonian_dimension = sum(block_dimensions.values())
         # print(f"self.hamiltonian_dimension={self.hamiltonian_dimension}")
         # Step 4: Build 2D list of block matrices
@@ -680,7 +683,7 @@ class T_tilde_total():
         block_matrix = sp.BlockMatrix(blocks)
         # Step 6: Convert BlockMatrix to regular Matrix for easier manipulation
         self.total_hamiltonian = sp.Matrix(block_matrix)
-        self.total_hamiltonian=sp.simplify(self.total_hamiltonian)
+        self.total_hamiltonian=sp.expand(sp.simplify(self.total_hamiltonian))
         return self.total_hamiltonian
 
     def _fix_latex_subscripts(self, latex_str):
@@ -907,6 +910,116 @@ class T_tilde_total():
                 return rounded_coeff * symbolic_factors[0]
             else:
                 return rounded_coeff * sp.Mul(*symbolic_factors)
+
+    def create_parameter_input_file(self, filename):
+        """
+        Create a text file for user to input hopping parameter values.
+        Extracts all free parameters from the Hamiltonian and creates an input template.
+
+        Format:
+            T_xxx=
+            re_T_xxx=
+            im_T_xxx=
+        depending on whether the parameter appears as T, re_T, or im_T in the Hamiltonian.
+        Args:
+            filename: filename: Path to the output text file
+
+        Returns:
+            dict: Information about the parameters written
+            {
+                'total_params': int,
+                'T_params': list,
+                're_params': list,
+                'im_params': list
+            }
+
+        """
+        if self.total_hamiltonian is None:
+            raise ValueError("Hamiltonian not constructed yet. Call construct_total_hamiltonian() first.")
+
+        # Extract all free symbols from the Hamiltonian
+        all_symbols = self.total_hamiltonian.free_symbols
+        # Separate symbols into categories
+        T_params = set()  # T^{i}_{orbital1,orbital2}
+        re_params = set()  # re_T^{i}_{orbital1,orbital2}
+        im_params = set()  # im_T^{i}_{orbital1,orbital2}
+        k_params = set()  # k0, k1, k2 (exclude these)
+
+        for symbol in all_symbols:
+            symbol_str = str(symbol)
+            # Skip k-vector symbols
+            if symbol_str in ['k0', 'k1', 'k2']:
+                k_params.add(symbol_str)
+                continue
+            # Check if it's a re_T parameter
+            if symbol_str.startswith('re_T'):
+                re_params.add(symbol_str)
+            # Check if it's an im_T parameter
+            elif symbol_str.startswith('im_T'):
+                im_params.add(symbol_str)
+            # Check if it's a T parameter (not prefixed with re_ or im_)
+            elif symbol_str.startswith('T'):
+                T_params.add(symbol_str)
+
+        # Sort parameters for consistent output
+        T_params_sorted = sorted(T_params)
+        re_params_sorted = sorted(re_params)
+        im_params_sorted = sorted(im_params)
+
+        # Write to file
+        with open(filename, 'w') as f:
+            f.write("# Hopping Parameter Input File\n")
+            f.write("# Generated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n")
+            f.write("#\n")
+            f.write("# Instructions:\n")
+            f.write("# 1. Fill in numerical values after the '=' symbol\n")
+            f.write("# 2. Use floating point numbers (e.g., 1.0, -2.5, 0.0) or complex numbers\n")
+            f.write("# 3. Lines starting with '#' are comments and will be ignored\n")
+            f.write("# 4. Do not modify the parameter names (left side of '=')\n")
+            f.write("#\n")
+            f.write(f"#   - Independent T parameters (complex): {len(T_params)}\n")
+            f.write(f"#   - Independent real parts (re_T): {len(re_params)}\n")
+            f.write(f"#   - Independent imaginary parts (im_T): {len(im_params)}\n")
+            f.write("#\n")
+            f.write("# " + "=" * 70 + "\n\n")
+            # Write T parameters
+            if T_params_sorted:
+                f.write("# " + "=" * 70 + "\n")
+                f.write("# Independent complex Hopping Parameters (T)\n")
+                f.write("# " + "=" * 70 + "\n\n")
+                for param in T_params_sorted:
+                    f.write(f"{param}=\n")
+                f.write("\n")
+            # Write re_T parameters
+            if re_params_sorted:
+                f.write("# " + "=" * 70 + "\n")
+                f.write("# Independent real Parts of Hopping Parameters (re_T)\n")
+                f.write("# " + "=" * 70 + "\n\n")
+                for param in re_params_sorted:
+                    f.write(f"{param}=\n")
+                f.write("\n")
+
+            # Write im_T parameters
+            if im_params_sorted:
+                f.write("# " + "=" * 70 + "\n")
+                f.write("# Independent imaginary Parts of Hopping Parameters (im_T)\n")
+                f.write("# " + "=" * 70 + "\n\n")
+                for param in im_params_sorted:
+                    f.write(f"{param}=\n")
+                f.write("\n")
+        # Print summary
+        print(f"\n✓ Created parameter input file: {filename}")
+        print(f"\nParameter summary:")
+        print(f"  - Independent complex T parameters: {len(T_params)}")
+        print(f"  - Independent real parts (re_T): {len(re_params)}")
+        print(f"  - Independent imaginary parts (im_T): {len(im_params)}")
+        # Return summary information
+        return {
+            'T_params': T_params_sorted,
+            're_params': re_params_sorted,
+            'im_params': im_params_sorted
+        }
+
 
     # def verify_hermiticity(self,tolerence=1e-3):
     #     """

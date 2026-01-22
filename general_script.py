@@ -3854,12 +3854,65 @@ sum_atom_T_tilde_lists(unit_cell_atoms)
 
 T_tilde_tot_obj=T_tilde_total(unit_cell_atoms)
 H=T_tilde_tot_obj.construct_total_hamiltonian()
-
+# sp.pprint(H)
 config_file_path = parsed_config["config_file_path"]
 config_dir = Path(config_file_path).parent
 out_matrix_file_name=str(config_dir)+"/H.txt"
 T_tilde_tot_obj.write_hamiltonian_to_latex(out_matrix_file_name)
 
+# ==============================================================================
+# Save Hamiltonian for later use
+# ==============================================================================
+print("\n" + "=" * 80)
+print("SAVING HAMILTONIAN DATA")
+print("=" * 80)
+
+# Prepare comprehensive data package for saving
+hamiltonian_data = {
+    # Core Hamiltonian data
+    'hamiltonian': H,  # The symbolic Hamiltonian matrix
+    'hamiltonian_dimension': T_tilde_tot_obj.hamiltonian_dimension,
+
+    # Atom and orbital information
+    'unit_cell_atoms': unit_cell_atoms,  # Full atom objects with orbital info
+    'sorted_wyckoff_instance_ids': T_tilde_tot_obj.sorted_wyckoff_instance_ids,
+    'block_dimensions': T_tilde_tot_obj.block_dimensions,  #Block sizes
+
+    # Block matrix data
+    'T_tilde_blocks': T_tilde_tot_obj.T_tilde_from_unit_cell_atoms,  # Individual blocks
+
+    # Lattice and symmetry information
+    'lattice_basis': lattice_basis,
+    'space_group_origin_cartesian': origin_cart,
+
+    # Configuration
+    'config': parsed_config,
+
+    # k-vector symbols
+    'k_symbols': ['k0', 'k1', 'k2'],  # k-vector component names
+
+    # Metadata
+    'creation_date': datetime.now().isoformat(),
+    'version': '0.0'
+}
+# Save as pickle
+out_pickle_file = str(config_dir) + "/hamiltonian_data.pkl"
+with open(out_pickle_file, 'wb') as f:
+    pickle.dump(hamiltonian_data, f)
+
+print(f"T_tilde_tot_obj.block_dimensions={T_tilde_tot_obj.block_dimensions}")
+# ==============================================================================
+# Create parameter input file
+# ==============================================================================
+print("\n" + "=" * 80)
+print("CREATING PARAMETER INPUT FILE")
+print("=" * 80)
+param_input_file = str(config_dir) + "/hopping_parameters.txt"
+param_info = T_tilde_tot_obj.create_parameter_input_file(param_input_file)
+print(f"\nNext steps:")
+print(f"1. Edit the file: {param_input_file}")
+print(f"2. Fill in values for all independent parameters")
+print("=" * 80)
 # grand_total_matrices = 0
 #
 # print(f"{'Atom ID':<20} | {'Atom Type':<10} | {'Matrix Count (Neighbors)':<25}")
