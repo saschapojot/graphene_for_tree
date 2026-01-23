@@ -687,7 +687,7 @@ class T_tilde_total():
         return self.total_hamiltonian
 
     def _fix_latex_subscripts(self, latex_str):
-        """
+        r"""
         Fix LaTeX double-subscript errors by converting re_XXX and im_XXX to Re(XXX) and Im(XXX).
 
         Transforms:
