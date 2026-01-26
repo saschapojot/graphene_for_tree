@@ -12,3 +12,8 @@ Part I, proprocessing
             convert space group matrices (affine) from conventional basis to Cartesian basis
    (iv) ... (symmetry analysis)
 this project is for testing symmetry analyzer core functionality
+
+###########################
+#general case
+1. python general_script.py ./path/to/xxx.conf
+2. python 
