@@ -3538,7 +3538,7 @@ def initialize_atom_T_tilde_lists(unit_cell_atoms, roots_list):
         traverse_and_init(root)
 
 
-def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list):
+def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list, dim):
     """
     Traverses the constraint tree forest and populates the T_tilde_list
     for each atom in the unit cell.
@@ -3551,12 +3551,20 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list):
     Args:
         unit_cell_atoms (list): List of atomIndex objects in the unit cell.
         roots_list (list): The forest of constraint trees (all_roots_reconstructed_swapped).
+        dim (int): Dimensionality of the system (1, 2, or 3).
 
     Returns:
         None
     """
-    # 1. Define k-vector symbols
-    k0, k1, k2 = sp.symbols('k0 k1 k2', real=True)
+    # 1. Define k-vector symbols based on dimensionality
+    if dim == 1:
+        k_symbols = [sp.Symbol('k0', real=True)]
+    elif dim == 2:
+        k_symbols = [sp.Symbol('k0', real=True), sp.Symbol('k1', real=True)]
+    elif dim == 3:
+        k_symbols = [sp.Symbol('k0', real=True), sp.Symbol('k1', real=True), sp.Symbol('k2', real=True)]
+    else:
+        raise ValueError(f"Invalid dimensionality: {dim}. Must be 1, 2, or 3.")
 
     #2. Create a lookup map. Note: 'atom' here is a reference to the object in unit_cell_atoms.
     atom_map = {atom.wyckoff_instance_id: atom for atom in unit_cell_atoms}
@@ -3586,7 +3594,24 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list):
         if n0 == 0 and n1 == 0 and n2 == 0:
             phase_factor = 1
         else:
-            phase_factor = sp.exp(sp.I * (n0 * k0 + n1 * k1 + n2 * k2))
+            # Calculate phase factor based on dimensionality
+            if dim == 1:
+                # 1D: Only k0 component, only n0 matters
+                k0 = k_symbols[0]
+                phase_factor = sp.exp(sp.I * n0 * k0)
+            elif dim == 2:
+                # 2D: k0 and k1 components, n0 and n1 matter
+                k0 = k_symbols[0]
+                k1 = k_symbols[1]
+                phase_factor = sp.exp(sp.I * (n0 * k0 + n1 * k1))
+            elif dim == 3:
+                # 3D: All k components
+                k0 = k_symbols[0]
+                k1 = k_symbols[1]
+                k2 = k_symbols[2]
+                phase_factor = sp.exp(sp.I * (n0 * k0 + n1 * k1 + n2 * k2))
+
+        #TODO: use k0 if 1d, use k0, k1 for 2d, use k0,k1,k2 for 3d
 
         # --- D. Construct Term ---
         # T_tilde_term = T_matrix * phase_factor
@@ -3847,7 +3872,7 @@ for tree_idx, root in enumerate(all_roots_reconstructed_swapped):
 print("\n" + "=" * 80)
 
 initialize_atom_T_tilde_lists(unit_cell_atoms,all_roots_reconstructed_swapped)
-populate_atom_T_tilde_lists(unit_cell_atoms,all_roots_reconstructed_swapped)
+populate_atom_T_tilde_lists(unit_cell_atoms,all_roots_reconstructed_swapped,search_dim)
 sum_atom_T_tilde_lists(unit_cell_atoms)
 
 T_tilde_tot_obj=T_tilde_total(unit_cell_atoms)
@@ -3864,7 +3889,16 @@ T_tilde_tot_obj.write_hamiltonian_to_latex(out_matrix_file_name)
 print("\n" + "=" * 80)
 print("SAVING HAMILTONIAN DATA")
 print("=" * 80)
-
+# Determine k-vector symbols based on dimensionality
+# dim = parsed_config['dim']
+if search_dim == 1:
+    k_symbols = ['k0']
+elif search_dim == 2:
+    k_symbols = ['k0', 'k1']
+elif search_dim == 3:
+    k_symbols = ['k0', 'k1', 'k2']
+else:
+    raise ValueError(f"Invalid dimensionality: {dim}. Must be 1, 2, or 3.")
 # Prepare comprehensive data package for saving
 hamiltonian_data = {
     # Core Hamiltonian data
@@ -3886,8 +3920,8 @@ hamiltonian_data = {
     # Configuration
     'config': parsed_config,
 
-    # k-vector symbols
-    'k_symbols': ['k0', 'k1', 'k2'],  # k-vector component names
+    # k-vector symbols (dimension-dependent)
+    'k_symbols': k_symbols,  # 1D: ['k0'], 2D: ['k0', 'k1'], 3D: ['k0', 'k1', 'k2']
 
     # Metadata
     'creation_date': datetime.now().isoformat(),
