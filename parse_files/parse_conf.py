@@ -45,7 +45,7 @@ float_pattern = r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?"
 # Pattern for atom type definitions: AtomSymbol = orbital1, orbital2, ...
 # Example: O=2px,2py,2pz
 # Modified to remove the count and semicolon requirement
-atom_orbital_pattern = r'^([A-Za-z]+\d*)\s*=\s*([1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fx3-3xy2|f3x2y-y3|fxz2|fyz2|fx2-y2z|fz3)(?:\s*,\s*[1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fx3-3xy2|f3x2y-y3|fxz2|fyz2|fx2-y2z|fz3))*)\s*$'
+atom_orbital_pattern = r'^([A-Za-z]+\d*)\s*=\s*([1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fx(x2-3y2)|fy(3x2-y2)|fxz2|fyz2|fz(x2-y2)|fz3)(?:\s*,\s*[1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fx3-3xy2|f3x2y-y3|fxz2|fyz2|fx2-y2z|fz3))*)\s*$'
 
 # Pattern for system name
 name_pattern = r'^name\s*=\s*([a-zA-Z0-9_-]+)\s*$'
