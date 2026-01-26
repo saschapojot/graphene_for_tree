@@ -3557,6 +3557,7 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list, dim):
         None
     """
     # 1. Define k-vector symbols based on dimensionality
+    # These symbols must match exactly what's stored in hamiltonian_data['k_symbols']
     if dim == 1:
         k_symbols = [sp.Symbol('k0', real=True)]
     elif dim == 2:
@@ -3566,7 +3567,7 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list, dim):
     else:
         raise ValueError(f"Invalid dimensionality: {dim}. Must be 1, 2, or 3.")
 
-    #2. Create a lookup map. Note: 'atom' here is a reference to the object in unit_cell_atoms.
+    # 2. Create a lookup map. Note: 'atom' here is a reference to the object in unit_cell_atoms.
     atom_map = {atom.wyckoff_instance_id: atom for atom in unit_cell_atoms}
 
     # 3. Define recursive helper
@@ -3595,6 +3596,7 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list, dim):
             phase_factor = 1
         else:
             # Calculate phase factor based on dimensionality
+            # Use k_symbols defined above to ensure consistency
             if dim == 1:
                 # 1D: Only k0 component, only n0 matters
                 k0 = k_symbols[0]
@@ -3610,8 +3612,6 @@ def populate_atom_T_tilde_lists(unit_cell_atoms, roots_list, dim):
                 k1 = k_symbols[1]
                 k2 = k_symbols[2]
                 phase_factor = sp.exp(sp.I * (n0 * k0 + n1 * k1 + n2 * k2))
-
-        #TODO: use k0 if 1d, use k0, k1 for 2d, use k0,k1,k2 for 3d
 
         # --- D. Construct Term ---
         # T_tilde_term = T_matrix * phase_factor
@@ -3889,8 +3889,7 @@ T_tilde_tot_obj.write_hamiltonian_to_latex(out_matrix_file_name)
 print("\n" + "=" * 80)
 print("SAVING HAMILTONIAN DATA")
 print("=" * 80)
-# Determine k-vector symbols based on dimensionality
-# dim = parsed_config['dim']
+
 if search_dim == 1:
     k_symbols = ['k0']
 elif search_dim == 2:
@@ -3898,7 +3897,7 @@ elif search_dim == 2:
 elif search_dim == 3:
     k_symbols = ['k0', 'k1', 'k2']
 else:
-    raise ValueError(f"Invalid dimensionality: {dim}. Must be 1, 2, or 3.")
+    raise ValueError(f"Invalid dimensionality: {search_dim}. Must be 1, 2, or 3.")
 # Prepare comprehensive data package for saving
 hamiltonian_data = {
     # Core Hamiltonian data
