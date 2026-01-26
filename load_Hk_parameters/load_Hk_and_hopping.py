@@ -296,7 +296,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 # Create the key tuple
                 param_key = (tree_idx, orbital1, orbital2)
                 # Create SymPy symbol: T^{n}_{orbital1,orbital2}
-                symbol = sp.symbols(f'T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                symbol = sp.Symbol(f'T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
                 # Store symbol with value 0
                 symbols['T'][param_key] = symbol
                 values['T'][param_key] = 0
@@ -309,7 +309,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 # Create the key tuple
                 param_key = (tree_idx, orbital1, orbital2)
                 # Create SymPy symbol: T^{n}_{orbital1,orbital2}
-                symbol = sp.symbols(f'T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                symbol = sp.Symbol(f'T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
                 # Store symbol, value, and type
                 symbols['T'][param_key] = symbol
                 values['T'][param_key] = value
@@ -334,7 +334,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 # Create the key tuple
                 param_key = (tree_idx, orbital1, orbital2)
                 # Create SymPy symbol: re_T^{n}_{orbital1,orbital2}
-                symbol = sp.symbols(f're_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}', real=True)
+                symbol = sp.Symbol(f're_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}', real=True)
                 # Store symbol with value 0
                 symbols['re_T'][param_key] = symbol
                 values['re_T'][param_key] = 0
@@ -351,7 +351,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 # Create the key tuple
                 param_key = (tree_idx, orbital1, orbital2)
                 # Create SymPy symbol: re_T^{n}_{orbital1,orbital2}
-                symbol = sp.symbols(f're_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}', real=True)
+                symbol = sp.Symbol(f're_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}', real=True)
                 # Store symbol, value, and type
                 symbols['re_T'][param_key] = symbol
                 values['re_T'][param_key] = float(value)
@@ -376,7 +376,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 # Create the key tuple
                 param_key = (tree_idx, orbital1, orbital2)
                 # Create SymPy symbol: im_T^{n}_{orbital1,orbital2}
-                symbol = sp.symbols(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                symbol = sp.Symbol(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
                 # Store symbol with value 0
                 symbols['im_T'][param_key] = symbol
                 values['im_T'][param_key] = 0
@@ -391,7 +391,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 if val_type == 'pure_imaginary':
                     # Standard pure imaginary case
                     param_key = (tree_idx, orbital1, orbital2)
-                    symbol = sp.symbols(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                    symbol = sp.Symbol(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
                     # Store symbol, value, and type (value is already pure imaginary)
                     symbols['im_T'][param_key] = symbol
                     values['im_T'][param_key] = value
@@ -400,7 +400,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 elif val_type == 'float' and value == 0:
                     # Accept zero as a valid imaginary part
                     param_key = (tree_idx, orbital1, orbital2)
-                    symbol = sp.symbols(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                    symbol = sp.Symbol(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
                     symbols['im_T'][param_key] = symbol
                     values['im_T'][param_key] = 0
                     value_types['im_T'][param_key] = 'pure_imaginary'
@@ -611,7 +611,214 @@ def load_hamiltonian_and_hopping_from_path(conf_file_path: str, verbose: bool = 
     return hamiltonian_data
 
 
+def substitute_hopping_parameters(hamiltonian_data: dict, verbose: bool = True) -> sp.Matrix:
+    """
+    Substitute numerical values for hopping parameters into the symbolic Hamiltonian.
+    This function takes the symbolic Hamiltonian H(k) and replaces all hopping parameter
+    symbols (T, re_T, im_T) with their numerical values from the hopping parameters.
 
+    Args:
+        hamiltonian_data: Dictionary returned by load_hamiltonian_and_hopping_from_path,
+                         containing both 'hamiltonian' and 'hopping_parameters' keys
+        verbose:  If True, print substitution information (default: True)
 
+    Returns: Hamiltonian with hopping parameters substituted with numerical values.
+                     The result still contains k-vector symbols (k0, k1, k2) but all
+                     hopping parameters are now numerical.
+    Example:
+            data = load_hamiltonian_and_hopping_from_path("path/to/config.conf")
+            H_numeric = substitute_hopping_parameters(data, verbose=True)
+            # H_numeric now has numerical hopping parameters but symbolic k
+     Raises:
+        KeyError: If required keys are missing from hamiltonian_data
+        ValueError: If hopping_parameters or substitution_dict is empty, or if there's a mismatch
+    """
+    # ==============================================================================
+    # STEP 1: Validate input
+    # ==============================================================================
+    if 'hamiltonian' not in hamiltonian_data:
+        raise KeyError("hamiltonian_data must contain 'hamiltonian' key")
+    if 'hopping_parameters' not in hamiltonian_data:
+        raise KeyError("hamiltonian_data must contain 'hopping_parameters' key")
 
+    hamiltonian = hamiltonian_data['hamiltonian']
+    hopping_params = hamiltonian_data['hopping_parameters']
+    if 'substitution_dict' not in hopping_params:
+        raise KeyError("hopping_parameters must contain 'substitution_dict' key")
 
+    substitution_dict = hopping_params['substitution_dict']
+    if not substitution_dict:
+        raise ValueError("substitution_dict is empty - no hopping parameters to substitute")
+    sp.pprint(f"substitution_dict={substitution_dict}")
+    # ==============================================================================
+    # STEP 2: Print information if verbose
+    # ==============================================================================
+    if verbose:
+        print("\n" + "=" * 80)
+        print("SUBSTITUTING HOPPING PARAMETERS")
+        print("=" * 80)
+        print(f"Hamiltonian dimension: {hamiltonian.shape[0]} × {hamiltonian.shape[1]}")
+        print(f"Number of parameters to substitute: {len(substitution_dict)}")
+
+        # Count parameters by type
+        num_T = len(hopping_params['symbols']['T'])
+        num_re_T = len(hopping_params['symbols']['re_T'])
+        num_im_T = len(hopping_params['symbols']['im_T'])
+        print(f"  T parameters: {num_T}")
+        print(f"  re_T parameters: {num_re_T}")
+        print(f"  im_T parameters: {num_im_T}")
+
+    # ==============================================================================
+    # STEP 3: Extract all symbols in the Hamiltonian before substitution
+    # ==============================================================================
+    if verbose:
+        print("\nAnalyzing Hamiltonian symbols...")
+
+    original_symbols = hamiltonian.free_symbols
+
+    if verbose:
+        print(f"Total unique symbols in Hamiltonian: {len(original_symbols)}")
+
+    # Identify which symbols are hopping parameters
+    hopping_symbols = set(substitution_dict.keys())
+    k_symbols_list = hamiltonian_data.get('k_symbols', [])
+    k_symbols_set = set(sp.symbols(k_symbols_list)) if k_symbols_list else set()
+
+    # Find which hopping parameters actually appear in H
+    hopping_in_H = original_symbols.intersection(hopping_symbols)
+    # Find which k symbols appear in H
+    k_in_H = original_symbols.intersection(k_symbols_set)
+    # Find any unexpected symbols (not hopping params and not k)
+    other_symbols = original_symbols.difference(hopping_symbols).difference(k_symbols_set)
+
+    if verbose:
+        print(f"  Hopping parameter symbols: {len(hopping_in_H)}")
+        print(f"  k-vector symbols: {len(k_in_H)} ({', '.join(str(s) for s in sorted(k_in_H, key=str))})")
+
+        if other_symbols:
+            print(f"  Warning: Found unexpected symbols: {', '.join(str(s) for s in sorted(other_symbols, key=str))}")
+
+    # ==============================================================================
+    # STEP 4: Validate that hopping parameters match exactly
+    # ==============================================================================
+    # Check for hopping parameters in the file but not used in Hamiltonian
+    unused_hopping = hopping_symbols.difference(original_symbols)
+
+    # Check for hopping parameters in Hamiltonian but not provided in file
+    missing_hopping = hopping_in_H.difference(hopping_symbols)
+
+    # Raise errors for any mismatches
+    if unused_hopping:
+        error_msg = f"\n✗ ERROR: {len(unused_hopping)} hopping parameters defined in file but not used in Hamiltonian:\n"
+        if len(unused_hopping) <= 20:
+            for sym in sorted(unused_hopping, key=str):
+                error_msg += f"  - {sym}\n"
+        else:
+            for sym in sorted(list(unused_hopping)[:20], key=str):
+                error_msg += f"  - {sym}\n"
+            error_msg += f"  ... and {len(unused_hopping) - 20} more\n"
+        error_msg += "\nPlease remove unused parameters from the hopping parameters file."
+        raise ValueError(error_msg)
+
+    if missing_hopping:
+        error_msg = f"\n✗ ERROR: {len(missing_hopping)} hopping parameters in Hamiltonian but not provided in file:\n"
+        if len(missing_hopping) <= 20:
+            for sym in sorted(missing_hopping, key=str):
+                error_msg += f"  - {sym}\n"
+        else:
+            for sym in sorted(list(missing_hopping)[:20], key=str):
+                error_msg += f"  - {sym}\n"
+            error_msg += f"  ... and {len(missing_hopping) - 20} more\n"
+        error_msg += "\nPlease ensure all hopping parameters in the Hamiltonian have values in the parameters file."
+        raise ValueError(error_msg)
+
+    # If we reach here, sets are exactly equal
+    if verbose:
+        print(f"\n  ✓ Hopping parameters match exactly: all {len(hopping_symbols)} parameters will be substituted")
+
+    # ==============================================================================
+    # STEP 5: Perform the substitution
+    # ==============================================================================
+    if verbose:
+        print("\nPerforming substitution...")
+
+    try:
+        # Substitute all hopping parameters with their numerical values
+        H_substituted = hamiltonian.subs(substitution_dict)
+
+        if verbose:
+            print("✓ Substitution complete")
+    except Exception as e:
+        raise Exception(f"Error during substitution: {e}")
+
+    # ==============================================================================
+    # STEP 6: Verify the substitution results (always performed, not just verbose)
+    # ==============================================================================
+    if verbose:
+        print("\nVerifying substitution results...")
+
+    final_symbols = H_substituted.free_symbols
+
+    if verbose:
+        print(f"Symbols remaining after substitution: {len(final_symbols)}")
+
+    # Check that k symbols match exactly (CRITICAL - always check)
+    k_remaining = final_symbols.intersection(k_symbols_set)
+
+    if k_remaining != k_symbols_set:
+        missing_k = k_symbols_set.difference(k_remaining)
+        extra_k = k_remaining.difference(k_symbols_set)
+
+        error_msg = f"\n✗ ERROR: k-vector symbols mismatch after substitution:\n"
+        error_msg += f"Expected k symbols: {{{', '.join(str(s) for s in sorted(k_symbols_set, key=str))}}}\n"
+        error_msg += f"Remaining k symbols: {{{', '.join(str(s) for s in sorted(k_remaining, key=str))}}}\n"
+
+        if missing_k:
+            error_msg += f"\nMissing k symbols:\n"
+            for sym in sorted(missing_k, key=str):
+                error_msg += f"  - {sym}\n"
+
+        if extra_k:
+            error_msg += f"\nUnexpected k symbols:\n"
+            for sym in sorted(extra_k, key=str):
+                error_msg += f"  - {sym}\n"
+
+        error_msg += "\nThe substitution may have incorrectly replaced k symbols."
+        raise ValueError(error_msg)
+
+    if verbose:
+        if k_remaining:
+            print(f"  ✓ k-vector symbols preserved: {', '.join(str(s) for s in sorted(k_remaining, key=str))}")
+        else:
+            print(f"  Note: No k-vector symbols in result (expected for 0D systems)")
+
+    # Check that hopping parameters have been removed (CRITICAL - always check)
+    hopping_remaining = final_symbols.intersection(hopping_symbols)
+
+    if hopping_remaining:
+        error_msg = f"\n✗ ERROR: {len(hopping_remaining)} hopping parameters remain unsubstituted:\n"
+        for sym in sorted(hopping_remaining, key=str):
+            error_msg += f"  - {sym}\n"
+        error_msg += "\nThis should not happen. Please check the substitution_dict."
+        raise ValueError(error_msg)
+
+    if verbose:
+        print(f"  ✓ All hopping parameters successfully substituted")
+
+    # Check for unexpected symbols (CRITICAL - always check)
+    expected_symbols = k_symbols_set
+    unexpected = final_symbols.difference(expected_symbols)
+
+    if unexpected:
+        error_msg = f"\n✗ ERROR: {len(unexpected)} unexpected symbols remain after substitution:\n"
+        for sym in sorted(unexpected, key=str):
+            error_msg += f"  - {sym}\n"
+        error_msg += "\nOnly k-vector symbols should remain after hopping parameter substitution."
+        error_msg += "\nThese symbols were neither hopping parameters nor k-vectors."
+        raise ValueError(error_msg)
+
+    if verbose:
+        print(f"  ✓ No unexpected symbols remain")
+        print("=" * 80 + "\n")
+
+    return H_substituted

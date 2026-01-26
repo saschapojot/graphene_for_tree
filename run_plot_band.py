@@ -1,11 +1,12 @@
 from datetime import datetime
 import sys
+import sympy as sp
 
 #self defined
 from classes.class_defs import frac_to_cartesian, atomIndex, hopping, vertex, T_tilde_total
 #loading Hk module
 
-from load_Hk_parameters.load_Hk_and_hopping import load_hamiltonian_and_hopping_from_path
+from load_Hk_parameters.load_Hk_and_hopping import load_hamiltonian_and_hopping_from_path,substitute_hopping_parameters
 
 
 argErrCode = 20
@@ -19,5 +20,5 @@ confFileName = str(sys.argv[1])
 
 hamiltonian_data=load_hamiltonian_and_hopping_from_path(confFileName,True)
 
-
-print(hamiltonian_data["hopping_parameters"])
+H_substituted=substitute_hopping_parameters(hamiltonian_data,True)
+# print(hamiltonian_data["hopping_parameters"])
