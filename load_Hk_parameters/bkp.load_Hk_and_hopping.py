@@ -118,10 +118,6 @@ pure_imaginary_pattern = rf"({float_pattern})[ij]"
 # Pattern for complex numbers: real + imag*j or real + imag*i
 # Examples: 1.5+2.3j, -1.0-3e-5j, 1+2i, -3.5e2+4.2e-3i
 complex_pattern = rf"({float_pattern})\s*([\+\-])\s*({float_pattern})[ij]"
-#empty value
-empty_pattern = r"^\s*$"
-
-
 # Pattern for orbital names (includes principal quantum number)
 # Examples: 1s, 2s, 2px, 2py, 2pz, 3dxy, 3dxz, 3dyz, 3dx2-y2, 3dz2, etc.
 orbital_pattern = r"[1-7](?:s|px|py|pz|dxy|dxz|dyz|dx2-y2|dz2|fxyz|fxz2|fyz2|fx3-3xy2|f3yx2-y3|fzx2-zy2|fz3)"
@@ -138,7 +134,6 @@ re_T_pattern = rf"re_T\^{{(\d+)}}_{{({orbital_pattern}),({orbital_pattern})}}"
 # Pattern for Independent imaginary Parts of Hopping Parameters (im_T)
 # Examples: im_T^{1}_{2s,2py}, im_T^{2}_{2s,2px}, im_T^{4}_{2py,2px}
 im_T_pattern = rf"im_T\^{{(\d+)}}_{{({orbital_pattern}),({orbital_pattern})}}"
-
 # ==============================================================================
 # Define helper function to clean file contents
 # ==============================================================================
@@ -181,7 +176,6 @@ def parse_numeric_value(value_str):
             - 'complex': for numbers with both real and imaginary parts
             - 'pure_imaginary': for pure imaginary numbers (0 + bi)
             - 'float': for pure real numbers
-            - 'empty': for empty or whitespace-only strings
             - (None, None): if parsing fails
      Examples:
           "2.3" -> (2.3, 'float')
@@ -191,11 +185,9 @@ def parse_numeric_value(value_str):
         "-3e-5j" -> (-3e-5j, 'pure_imaginary')
     """
     value_str = value_str.strip()
-    if re.fullmatch(empty_pattern, value_str):
-        return (0, "empty")
     # Try to parse as complex number (real + imaginary)
     # Examples: 1.5+2.3j, -1.0-3e-5j, 1+2i
-    match = re.fullmatch(complex_pattern, value_str)
+    match = re.match(complex_pattern, value_str)
     if match:
         real_part = float(match.group(1))
         sign = match.group(2)
@@ -207,19 +199,18 @@ def parse_numeric_value(value_str):
 
     # Try to parse as pure imaginary number
     # Examples: 2.3j, -3e-5j, 2i, -4.2e-3i
-    match = re.fullmatch(pure_imaginary_pattern, value_str)
+    match = re.match(pure_imaginary_pattern, value_str)
     if match:
         imag_part = float(match.group(1))
         return (complex(0, imag_part), 'pure_imaginary')
 
     # Try to parse as pure real number
     # Examples: 2.3, -3.5, 1e-3, -4.2e-3
-    match = re.fullmatch(pure_float_pattern, value_str)
+    match = re.match(pure_float_pattern, value_str)
     if match:
         return (float(match.group(1)), 'float')
-
-
     return (None, None)
+
 
 
 def parse_hopping_parameters(hopping_parameters_file_name):
@@ -228,38 +219,32 @@ def parse_hopping_parameters(hopping_parameters_file_name):
     The file should contain lines in the format:
     - T^{n}_{orbital1,orbital2} = complex_value or pure float or pure imaginary
     - re_T^{n}_{orbital1,orbital2} = float_value (real part)
-    - im_T^{n}_{orbital1,orbital2} = float_value i or float_value j, or 0
+    - im_T^{n}_{orbital1,orbital2} = float_value i or float_value j
+
     Args:
-        hopping_parameters_file_name:
+        hopping_parameters_file_name: Path to the hopping parameters file
 
     Returns:
-        dict: A dictionary containing:
-            - 'symbols': Dictionary with keys 'T', 're_T', 'im_T', each containing
-                        dictionaries mapping (tree_idx, orbital1, orbital2) tuples to SymPy symbols
-            - 'substitution_dict': Dictionary mapping SymPy symbols to their numeric values
-                                  for substitution into symbolic Hamiltonians
-    Raises:
-        FileNotFoundError: If the hopping parameters file doesn't exist
-        ValueError: If a line has invalid format or value type for the parameter
-     Examples:
-        Input file content:
-            T^{0}_{2s,2s} = 1.5
-            re_T^{1}_{2px,2s} = 0.3
-            im_T^{1}_{2px,2s} = 0.5j
+        Dictionary containing:
+        {
+            'symbols': {
+                'T': {(n, orbital1, orbital2): sympy.Symbol, ...},
+                're_T': {(n, orbital1, orbital2): sympy.Symbol, ...},
+                'im_T': {(n, orbital1, orbital2): sympy.Symbol, ...}
+            },
+            'values': {
+                'T': {(n, orbital1, orbital2): complex_value, ...},
+                're_T': {(n, orbital1, orbital2): float_value, ...},
+                'im_T': {(n, orbital1, orbital2): pure_imaginary_value, ...}
+            },
+            'value_types': {
+                'T': {(n, orbital1, orbital2): 'complex'|'pure_imaginary'|'float', ...},
+                're_T': {(n, orbital1, orbital2): 'float', ...},
+                'im_T': {(n, orbital1, orbital2): 'pure_imaginary', ...}
+            },
+            'substitution_dict': {sympy.Symbol: numeric_value, ...}
+        }
 
-        Returns:
-            {
-                'symbols': {
-                    'T': {('0', '2s', '2s'): Symbol('T^{0}_{2s,2s}')},
-                    're_T': {('1', '2px', '2s'): Symbol('re_T^{1}_{2px,2s}')},
-                    'im_T': {('1', '2px', '2s'): Symbol('im_T^{1}_{2px,2s}')}
-                },
-                'substitution_dict': {
-                    Symbol('T^{0}_{2s,2s}'): 1.5,
-                    Symbol('re_T^{1}_{2px,2s}'): 0.3,
-                    Symbol('im_T^{1}_{2px,2s}'): 0.5
-                }
-            }
     """
     # Check if file exists
     param_file = Path(hopping_parameters_file_name)
@@ -267,7 +252,6 @@ def parse_hopping_parameters(hopping_parameters_file_name):
         raise FileNotFoundError(f"Hopping parameters file not found: {hopping_parameters_file_name}")
     # Get cleaned lines from file
     linesWithCommentsRemoved = removeCommentsAndEmptyLines(hopping_parameters_file_name)
-    # print(linesWithCommentsRemoved)
 
     # Initialize storage dictionaries
     symbols = {
@@ -275,117 +259,168 @@ def parse_hopping_parameters(hopping_parameters_file_name):
         're_T': {},  # SymPy symbols for real parts
         'im_T': {}  # SymPy symbols for imaginary parts
     }
+    values = {
+        'T': {},  # Numeric values for complex hopping parameters
+        're_T': {},  # Numeric values for real parts (float)
+        'im_T': {}  # Numeric values for imaginary parts (pure imaginary)
+    }
+    value_types = {
+        'T': {},  # Types of values for complex hopping parameters
+        're_T': {},  # Types for real parts (should always be 'float')
+        'im_T': {}  # Types for imaginary parts (should always be 'pure_imaginary')
+    }
     # This dictionary maps symbols to values for easy substitution into Hamiltonian
     substitution_dict = {}
     # Process each line
     for line_num, line in enumerate(linesWithCommentsRemoved, start=1):
         # Try to match key=value pattern
-        kv_match = re.fullmatch(key_value_pattern, line)
+        kv_match = re.match(key_value_pattern, line)
         if not kv_match:
             print(f"Warning: Line {line_num} doesn't match key=value format: {line}")
             continue
         key = kv_match.group(1).strip()
         value_str = kv_match.group(2).strip()
-        # print(f"key={key}, value={value_str}")
+
         # ==============================================================================
         # Try to parse T^{n}_{orbital1,orbital2} = complex_value or pure float or pure imaginary
         # ==============================================================================
-        T_match = re.fullmatch(T_pattern, key)
+        T_match = re.match(T_pattern, key)
         if T_match:
             tree_idx = T_match.group(1)
             orbital1 = T_match.group(2)
             orbital2 = T_match.group(3)
+            # Check if value is empty or whitespace only
+            if not value_str:
+                print(
+                    f"Warning: Line {line_num} has empty value for T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}, setting to 0")
+                # Create the key tuple
+                param_key = (tree_idx, orbital1, orbital2)
+                # Create SymPy symbol: T^{n}_{orbital1,orbital2}
+                symbol = sp.Symbol(f'T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                # Store symbol with value 0
+                symbols['T'][param_key] = symbol
+                values['T'][param_key] = 0
+                value_types['T'][param_key] = 'float'
+                substitution_dict[symbol] = 0
+                continue
             # Parse the value
             value, val_type = parse_numeric_value(value_str)
-            if value is None:
+            if value is not None:
+                # Create the key tuple
+                param_key = (tree_idx, orbital1, orbital2)
+                # Create SymPy symbol: T^{n}_{orbital1,orbital2}
+                symbol = sp.Symbol(f'T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                # Store symbol, value, and type
+                symbols['T'][param_key] = symbol
+                values['T'][param_key] = value
+                value_types['T'][param_key] = val_type
+                substitution_dict[symbol] = value
+            else:
                 raise ValueError(f"Line {line_num} has invalid value for T: {value_str}")
-            # Create the key tuple
-            param_key = (tree_idx, orbital1, orbital2)
-            # Create SymPy symbol: T^{n}_{orbital1,orbital2}
-            symbol = sp.Symbol(f'T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
-            # sp.pprint(f"param_key={param_key}")
-            # sp.pprint(f"symbol={symbol}")
-            # Store symbol, value
-            symbols['T'][param_key] = symbol
-            substitution_dict[symbol] = value
             continue
-        #parsing T^{n}_{orbital1,orbital2} ends here
 
         # ==============================================================================
         # Try to parse re_T^{n}_{orbital1,orbital2} = float_value
         # ==============================================================================
-        re_T_match = re.fullmatch(re_T_pattern, key)
+        re_T_match = re.match(re_T_pattern, key)
         if re_T_match:
             tree_idx = re_T_match.group(1)
             orbital1 = re_T_match.group(2)
             orbital2 = re_T_match.group(3)
+            # Check if value is empty or whitespace only
+            if not value_str:
+                print(
+                    f"Warning: Line {line_num} has empty value for re_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}, setting to 0")
+                # Create the key tuple
+                param_key = (tree_idx, orbital1, orbital2)
+                # Create SymPy symbol: re_T^{n}_{orbital1,orbital2}
+                symbol = sp.Symbol(f're_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}', real=True)
+                # Store symbol with value 0
+                symbols['re_T'][param_key] = symbol
+                values['re_T'][param_key] = 0
+                value_types['re_T'][param_key] = 'float'
+                substitution_dict[symbol] = 0
+                continue
             # Parse the value (should be a real number)
             value, val_type = parse_numeric_value(value_str)
-            if value is None:
-                raise ValueError(
-                    f"Line {line_num}: re_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should have a real (float) value, but got {val_type}: {value_str}")
-            # Validate: must be float or empty (which gives 0)
-            if val_type == 'complex':
-                raise ValueError(
-                    f"Line {line_num}: re_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should be a real number, "
-                    f"but got a complex number: {value_str}")
-            if val_type == 'pure_imaginary':
-                raise ValueError(
-                    f"Line {line_num}: re_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should be a real number, "
-                    f"but got a pure imaginary number: {value_str}")
-            # Create the key tuple
-            param_key = (tree_idx, orbital1, orbital2)
-            # Create SymPy symbol: re_T^{n}_{orbital1,orbital2}
-            symbol = sp.Symbol(f're_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}', real=True)
-            # Store symbol, value
-            symbols['re_T'][param_key] = symbol
-            substitution_dict[symbol] = float(value)
+            if value is not None:
+                # Validate that it's a float type
+                if val_type != 'float':
+                    raise ValueError(
+                        f"Line {line_num}: re_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should have a real (float) value, but got {val_type}: {value_str}")
+                # Create the key tuple
+                param_key = (tree_idx, orbital1, orbital2)
+                # Create SymPy symbol: re_T^{n}_{orbital1,orbital2}
+                symbol = sp.Symbol(f're_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}', real=True)
+                # Store symbol, value, and type
+                symbols['re_T'][param_key] = symbol
+                values['re_T'][param_key] = float(value)
+                value_types['re_T'][param_key] = 'float'
+                substitution_dict[symbol] = float(value)
+            else:
+                raise ValueError(f"Line {line_num} has invalid value for re_T: {value_str}")
             continue
-        #parsing re_T^{n}_{orbital1,orbital2} ends here
+
         # ==============================================================================
-        # Try to parse im_T^{n}_{orbital1,orbital2} = float_value i or float_value j or 0
+        # Try to parse im_T^{n}_{orbital1,orbital2} = float_value i or float_value j
         # ==============================================================================
-        im_T_match = re.fullmatch(im_T_pattern, key)
+        im_T_match = re.match(im_T_pattern, key)
         if im_T_match:
             tree_idx = im_T_match.group(1)
             orbital1 = im_T_match.group(2)
             orbital2 = im_T_match.group(3)
-            # Parse the value (should be pure imaginary with i or j or 0)
+            # Check if value is empty or whitespace only
+            if not value_str:
+                print(
+                    f"Warning: Line {line_num} has empty value for im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}, setting to 0")
+                # Create the key tuple
+                param_key = (tree_idx, orbital1, orbital2)
+                # Create SymPy symbol: im_T^{n}_{orbital1,orbital2}
+                symbol = sp.Symbol(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                # Store symbol with value 0
+                symbols['im_T'][param_key] = symbol
+                values['im_T'][param_key] = 0
+                value_types['im_T'][param_key] = 'pure_imaginary'
+                substitution_dict[symbol] = 0
+                continue
+            # Parse the value (should be pure imaginary with i or j)
             value, val_type = parse_numeric_value(value_str)
-            if value is None:
-                raise ValueError(
-                    f"Line {line_num}: im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should have a pure imaginary value or 0, but got {val_type}: {value_str}")
-            # Validate: must be pure_imaginary, empty, or float that equals 0
-            if val_type == 'complex':
-                raise ValueError(
-                    f"Line {line_num}: im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should be pure imaginary or 0, "
-                    f"but got a full complex number: {value_str}")
-            if val_type == 'float' and value != 0:
-                raise ValueError(
-                    f"Line {line_num}: im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should be pure imaginary or 0, "
-                    f"but got a non-zero real number: {value_str}")
-
-            # Create the key tuple
-            param_key = (tree_idx, orbital1, orbital2)
-            # Create SymPy symbol: im_T^{n}_{orbital1,orbital2}
-            symbol = sp.Symbol(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}', real=True)
-            # Store symbol, value
-            symbols['im_T'][param_key] = symbol
-            substitution_dict[symbol] =value
+            if value is not None:
+                # Validate that it's a pure imaginary type or zero (float)
+                # Accept pure_imaginary or float (if float, it should be 0)
+                if val_type == 'pure_imaginary':
+                    # Standard pure imaginary case
+                    param_key = (tree_idx, orbital1, orbital2)
+                    symbol = sp.Symbol(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                    # Store symbol, value, and type (value is already pure imaginary)
+                    symbols['im_T'][param_key] = symbol
+                    values['im_T'][param_key] = value
+                    value_types['im_T'][param_key] = 'pure_imaginary'
+                    substitution_dict[symbol] = value
+                elif val_type == 'float' and value == 0:
+                    # Accept zero as a valid imaginary part
+                    param_key = (tree_idx, orbital1, orbital2)
+                    symbol = sp.Symbol(f'im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}}')
+                    symbols['im_T'][param_key] = symbol
+                    values['im_T'][param_key] = 0
+                    value_types['im_T'][param_key] = 'pure_imaginary'
+                    substitution_dict[symbol] = 0
+                else:
+                    raise ValueError(
+                        f"Line {line_num}: im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should have a pure imaginary value or 0, but got {val_type}: {value_str}")
+            else:
+                raise ValueError(f"Line {line_num} has invalid value for im_T: {value_str}")
             continue
-        #parsing im_T^{n}_{orbital1,orbital2} ends here
+
         # If we reach here, the key didn't match any expected pattern
-        print(f"Warning: Line {line_num} has unrecognized parameter format: {key}")
+        raise ValueError(f"Line {line_num} has unrecognized parameter format: {key}")
 
-
-
-    #for line_num, line in enumerate(linesWithCommentsRemoved, start=1) ends here
-    # print(substitution_dict)
     return {
         'symbols': symbols,
+        'values': values,
+        'value_types': value_types,
         'substitution_dict': substitution_dict
     }
-
 # ==============================================================================
 # Hamiltonian Data Loading
 # ==============================================================================
@@ -393,11 +428,11 @@ def load_hamiltonian_data(pickle_path: str, verbose: bool = True) -> dict:
     """
     Load Hamiltonian data from pickle file.
     Args:
-        pickle_path:  Path to hamiltonian_data.pkl file
-        verbose:  If True, print loading information
+        pickle_path: Path to hamiltonian_data.pkl file
+        verbose: If True, print loading information
 
     Returns:
-          Dictionary containing all Hamiltonian data:
+         Dictionary containing all Hamiltonian data:
         {
             'hamiltonian': sympy.Matrix - The symbolic Hamiltonian
             'hamiltonian_dimension': int - Total dimension
@@ -415,7 +450,6 @@ def load_hamiltonian_data(pickle_path: str, verbose: bool = True) -> dict:
     Raises:
         FileNotFoundError: If pickle file doesn't exist
         pickle.UnpicklingError: If file is corrupted
-
     """
     pickle_file = Path(pickle_path)
     if not pickle_file.exists():
@@ -449,15 +483,11 @@ def load_hamiltonian_data(pickle_path: str, verbose: bool = True) -> dict:
         raise Exception(f"Unexpected error loading Hamiltonian data: {e}")
 
 
-def load_hamiltonian_and_hopping_from_path(conf_file_path: str, verbose: bool = True) ->  tuple[dict, dict]:
+def load_hamiltonian_and_hopping_from_path(conf_file_path: str, verbose: bool = True) -> dict:
     """
     Complete pipeline to load Hamiltonian data and hopping parameters from a configuration file path.
 
-    Args:
-        conf_file_path:
-        verbose:
 
-    Returns:
 
     """
     # ==============================================================================
@@ -466,7 +496,6 @@ def load_hamiltonian_and_hopping_from_path(conf_file_path: str, verbose: bool = 
     conf_path = Path(conf_file_path)
     if not conf_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {conf_file_path}")
-
     if verbose:
         print("\n" + "=" * 80)
         print("LOADING HAMILTONIAN DATA")
@@ -562,6 +591,9 @@ def load_hamiltonian_and_hopping_from_path(conf_file_path: str, verbose: bool = 
 
     except Exception as e:
         raise Exception(f"Failed to load hopping parameters: {e}")
+
+    # Add hopping parameters to the returned dictionary
+    hamiltonian_data['hopping_parameters'] = hopping_params
     # ==============================================================================
     # STEP 7: Final validation and summary
     # ==============================================================================
@@ -576,43 +608,217 @@ def load_hamiltonian_and_hopping_from_path(conf_file_path: str, verbose: bool = 
         print(f"✓ Hopping parameters loaded: {len(hopping_params['substitution_dict'])} total")
         print("=" * 80 + "\n")
 
-    return hamiltonian_data,hopping_params
+    return hamiltonian_data
 
 
-
-def substitute_hopping_parameters(hamiltonian_data: dict,hopping_params:dict, verbose: bool = True) -> sp.Matrix:
+def substitute_hopping_parameters(hamiltonian_data: dict, verbose: bool = True) -> sp.Matrix:
     """
     Substitute numerical values for hopping parameters into the symbolic Hamiltonian.
     This function takes the symbolic Hamiltonian H(k) and replaces all hopping parameter
     symbols (T, re_T, im_T) with their numerical values from the hopping parameters.
+
     Args:
-        hamiltonian_data:
-        hopping_params:
-        verbose:
+        hamiltonian_data: Dictionary returned by load_hamiltonian_and_hopping_from_path,
+                         containing both 'hamiltonian' and 'hopping_parameters' keys
+        verbose:  If True, print substitution information (default: True)
 
-    Returns:
-
+    Returns: Hamiltonian with hopping parameters substituted with numerical values.
+                     The result still contains k-vector symbols (k0, k1, k2) but all
+                     hopping parameters are now numerical.
+    Example:
+            data = load_hamiltonian_and_hopping_from_path("path/to/config.conf")
+            H_numeric = substitute_hopping_parameters(data, verbose=True)
+            # H_numeric now has numerical hopping parameters but symbolic k
+     Raises:
+        KeyError: If required keys are missing from hamiltonian_data
+        ValueError: If hopping_parameters or substitution_dict is empty, or if there's a mismatch
     """
+    # ==============================================================================
+    # STEP 1: Validate input
+    # ==============================================================================
     if 'hamiltonian' not in hamiltonian_data:
         raise KeyError("hamiltonian_data must contain 'hamiltonian' key")
+    if 'hopping_parameters' not in hamiltonian_data:
+        raise KeyError("hamiltonian_data must contain 'hopping_parameters' key")
+
+    hamiltonian = hamiltonian_data['hamiltonian']
+    hopping_params = hamiltonian_data['hopping_parameters']
     if 'substitution_dict' not in hopping_params:
         raise KeyError("hopping_parameters must contain 'substitution_dict' key")
-    hamiltonian = hamiltonian_data['hamiltonian']
+
     substitution_dict = hopping_params['substitution_dict']
     if not substitution_dict:
         raise ValueError("substitution_dict is empty - no hopping parameters to substitute")
-    # sp.pprint(f"substitution_dict={substitution_dict}")
+    sp.pprint(f"substitution_dict={substitution_dict}")
+    # ==============================================================================
+    # STEP 2: Print information if verbose
+    # ==============================================================================
+    if verbose:
+        print("\n" + "=" * 80)
+        print("SUBSTITUTING HOPPING PARAMETERS")
+        print("=" * 80)
+        print(f"Hamiltonian dimension: {hamiltonian.shape[0]} × {hamiltonian.shape[1]}")
+        print(f"Number of parameters to substitute: {len(substitution_dict)}")
+
+        # Count parameters by type
+        num_T = len(hopping_params['symbols']['T'])
+        num_re_T = len(hopping_params['symbols']['re_T'])
+        num_im_T = len(hopping_params['symbols']['im_T'])
+        print(f"  T parameters: {num_T}")
+        print(f"  re_T parameters: {num_re_T}")
+        print(f"  im_T parameters: {num_im_T}")
+
+    # ==============================================================================
+    # STEP 3: Extract all symbols in the Hamiltonian before substitution
+    # ==============================================================================
+    if verbose:
+        print("\nAnalyzing Hamiltonian symbols...")
+
     original_symbols = hamiltonian.free_symbols
-    # print(original_symbols)
+
+    if verbose:
+        print(f"Total unique symbols in Hamiltonian: {len(original_symbols)}")
+
     # Identify which symbols are hopping parameters
     hopping_symbols = set(substitution_dict.keys())
     k_symbols_list = hamiltonian_data.get('k_symbols', [])
-    k_symbols_set = set([sp.Symbol(item,real=True ) for item in k_symbols_list])
+    k_symbols_set = set(sp.symbols(k_symbols_list)) if k_symbols_list else set()
+
     # Find which hopping parameters actually appear in H
     hopping_in_H = original_symbols.intersection(hopping_symbols)
     # Find which k symbols appear in H
     k_in_H = original_symbols.intersection(k_symbols_set)
     # Find any unexpected symbols (not hopping params and not k)
     other_symbols = original_symbols.difference(hopping_symbols).difference(k_symbols_set)
-    print(f"k_symbols_set={k_symbols_set}")
 
+    if verbose:
+        print(f"  Hopping parameter symbols: {len(hopping_in_H)}")
+        print(f"  k-vector symbols: {len(k_in_H)} ({', '.join(str(s) for s in sorted(k_in_H, key=str))})")
+
+        if other_symbols:
+            print(f"  Warning: Found unexpected symbols: {', '.join(str(s) for s in sorted(other_symbols, key=str))}")
+
+    # ==============================================================================
+    # STEP 4: Validate that hopping parameters match exactly
+    # ==============================================================================
+    # Check for hopping parameters in the file but not used in Hamiltonian
+    unused_hopping = hopping_symbols.difference(original_symbols)
+
+    # Check for hopping parameters in Hamiltonian but not provided in file
+    missing_hopping = hopping_in_H.difference(hopping_symbols)
+
+    # Raise errors for any mismatches
+    if unused_hopping:
+        error_msg = f"\n✗ ERROR: {len(unused_hopping)} hopping parameters defined in file but not used in Hamiltonian:\n"
+        if len(unused_hopping) <= 20:
+            for sym in sorted(unused_hopping, key=str):
+                error_msg += f"  - {sym}\n"
+        else:
+            for sym in sorted(list(unused_hopping)[:20], key=str):
+                error_msg += f"  - {sym}\n"
+            error_msg += f"  ... and {len(unused_hopping) - 20} more\n"
+        error_msg += "\nPlease remove unused parameters from the hopping parameters file."
+        raise ValueError(error_msg)
+
+    if missing_hopping:
+        error_msg = f"\n✗ ERROR: {len(missing_hopping)} hopping parameters in Hamiltonian but not provided in file:\n"
+        if len(missing_hopping) <= 20:
+            for sym in sorted(missing_hopping, key=str):
+                error_msg += f"  - {sym}\n"
+        else:
+            for sym in sorted(list(missing_hopping)[:20], key=str):
+                error_msg += f"  - {sym}\n"
+            error_msg += f"  ... and {len(missing_hopping) - 20} more\n"
+        error_msg += "\nPlease ensure all hopping parameters in the Hamiltonian have values in the parameters file."
+        raise ValueError(error_msg)
+
+    # If we reach here, sets are exactly equal
+    if verbose:
+        print(f"\n  ✓ Hopping parameters match exactly: all {len(hopping_symbols)} parameters will be substituted")
+
+    # ==============================================================================
+    # STEP 5: Perform the substitution
+    # ==============================================================================
+    if verbose:
+        print("\nPerforming substitution...")
+
+    try:
+        # Substitute all hopping parameters with their numerical values
+        H_substituted = hamiltonian.subs(substitution_dict)
+
+        if verbose:
+            print("✓ Substitution complete")
+    except Exception as e:
+        raise Exception(f"Error during substitution: {e}")
+
+    # ==============================================================================
+    # STEP 6: Verify the substitution results (always performed, not just verbose)
+    # ==============================================================================
+    if verbose:
+        print("\nVerifying substitution results...")
+
+    final_symbols = H_substituted.free_symbols
+
+    if verbose:
+        print(f"Symbols remaining after substitution: {len(final_symbols)}")
+
+    # Check that k symbols match exactly (CRITICAL - always check)
+    k_remaining = final_symbols.intersection(k_symbols_set)
+
+    if k_remaining != k_symbols_set:
+        missing_k = k_symbols_set.difference(k_remaining)
+        extra_k = k_remaining.difference(k_symbols_set)
+
+        error_msg = f"\n✗ ERROR: k-vector symbols mismatch after substitution:\n"
+        error_msg += f"Expected k symbols: {{{', '.join(str(s) for s in sorted(k_symbols_set, key=str))}}}\n"
+        error_msg += f"Remaining k symbols: {{{', '.join(str(s) for s in sorted(k_remaining, key=str))}}}\n"
+
+        if missing_k:
+            error_msg += f"\nMissing k symbols:\n"
+            for sym in sorted(missing_k, key=str):
+                error_msg += f"  - {sym}\n"
+
+        if extra_k:
+            error_msg += f"\nUnexpected k symbols:\n"
+            for sym in sorted(extra_k, key=str):
+                error_msg += f"  - {sym}\n"
+
+        error_msg += "\nThe substitution may have incorrectly replaced k symbols."
+        raise ValueError(error_msg)
+
+    if verbose:
+        if k_remaining:
+            print(f"  ✓ k-vector symbols preserved: {', '.join(str(s) for s in sorted(k_remaining, key=str))}")
+        else:
+            print(f"  Note: No k-vector symbols in result (expected for 0D systems)")
+
+    # Check that hopping parameters have been removed (CRITICAL - always check)
+    hopping_remaining = final_symbols.intersection(hopping_symbols)
+
+    if hopping_remaining:
+        error_msg = f"\n✗ ERROR: {len(hopping_remaining)} hopping parameters remain unsubstituted:\n"
+        for sym in sorted(hopping_remaining, key=str):
+            error_msg += f"  - {sym}\n"
+        error_msg += "\nThis should not happen. Please check the substitution_dict."
+        raise ValueError(error_msg)
+
+    if verbose:
+        print(f"  ✓ All hopping parameters successfully substituted")
+
+    # Check for unexpected symbols (CRITICAL - always check)
+    expected_symbols = k_symbols_set
+    unexpected = final_symbols.difference(expected_symbols)
+
+    if unexpected:
+        error_msg = f"\n✗ ERROR: {len(unexpected)} unexpected symbols remain after substitution:\n"
+        for sym in sorted(unexpected, key=str):
+            error_msg += f"  - {sym}\n"
+        error_msg += "\nOnly k-vector symbols should remain after hopping parameter substitution."
+        error_msg += "\nThese symbols were neither hopping parameters nor k-vectors."
+        raise ValueError(error_msg)
+
+    if verbose:
+        print(f"  ✓ No unexpected symbols remain")
+        print("=" * 80 + "\n")
+
+    return H_substituted
