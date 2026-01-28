@@ -1,6 +1,8 @@
 from datetime import datetime
 import sys
 import sympy as sp
+from evalidate.security import simple_attacks
+
 sp.init_printing(use_unicode=False, wrap_line=False)
 #self defined
 from classes.class_defs import frac_to_cartesian, atomIndex, hopping, vertex, T_tilde_total
@@ -30,4 +32,6 @@ h_mat=h['hamiltonian']
 # df=h_mat-h_mat.H
 # sp.pprint(sp.simplify(df))
 Hk=substitute_hopping_parameters(h,hop,True)
+df=Hk-Hk.H
 
+sp.pprint(sp.simplify(df))

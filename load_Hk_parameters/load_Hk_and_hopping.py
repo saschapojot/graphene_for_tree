@@ -11,7 +11,7 @@ import pickle
 import numpy as np
 import sympy as sp
 import re
-
+from copy import deepcopy
 # Exit codes for different error types
 fmtErrStr = "format error: "
 formatErrCode = 1        # Format/syntax errors in conf file
@@ -114,7 +114,7 @@ float_pattern = r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?"
 pure_float_pattern = rf"({float_pattern})"
 # Pattern for pure imaginary numbers: imag*j or imag*i
 # Examples: 2.3j, -3e-5j, 2i, -4.2e-3i
-pure_imaginary_pattern = rf"({float_pattern})[ij]"
+# pure_imaginary_pattern = rf"({float_pattern})[ij]"
 # Pattern for complex numbers: real + imag*j or real + imag*i
 # Examples: 1.5+2.3j, -1.0-3e-5j, 1+2i, -3.5e2+4.2e-3i
 complex_pattern = rf"({float_pattern})\s*([\+\-])\s*({float_pattern})[ij]"
@@ -179,16 +179,16 @@ def parse_numeric_value(value_str):
     Returns:
         tuple: (parsed_value, value_type) where value_type is one of:
             - 'complex': for numbers with both real and imaginary parts
-            - 'pure_imaginary': for pure imaginary numbers (0 + bi)
+
             - 'float': for pure real numbers
             - 'empty': for empty or whitespace-only strings
             - (None, None): if parsing fails
      Examples:
           "2.3" -> (2.3, 'float')
-        "2.3j" -> (2.3j, 'pure_imaginary')
+
         "1.5+2.3j" -> (1.5+2.3j, 'complex')
         "1.5-2.3i" -> (1.5-2.3j, 'complex')
-        "-3e-5j" -> (-3e-5j, 'pure_imaginary')
+
     """
     value_str = value_str.strip()
     if re.fullmatch(empty_pattern, value_str):
@@ -205,12 +205,6 @@ def parse_numeric_value(value_str):
         else:  # sign == '-'
             return (complex(real_part, -imag_abs), 'complex')
 
-    # Try to parse as pure imaginary number
-    # Examples: 2.3j, -3e-5j, 2i, -4.2e-3i
-    match = re.fullmatch(pure_imaginary_pattern, value_str)
-    if match:
-        imag_part = float(match.group(1))
-        return (complex(0, imag_part), 'pure_imaginary')
 
     # Try to parse as pure real number
     # Examples: 2.3, -3.5, 1e-3, -4.2e-3
@@ -228,7 +222,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
     The file should contain lines in the format:
     - T^{n}_{orbital1,orbital2} = complex_value or pure float or pure imaginary
     - re_T^{n}_{orbital1,orbital2} = float_value (real part)
-    - im_T^{n}_{orbital1,orbital2} = float_value i or float_value j, or 0
+    - im_T^{n}_{orbital1,orbital2} = float_value
     Args:
         hopping_parameters_file_name:
 
@@ -245,7 +239,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
         Input file content:
             T^{0}_{2s,2s} = 1.5
             re_T^{1}_{2px,2s} = 0.3
-            im_T^{1}_{2px,2s} = 0.5j
+            im_T^{1}_{2px,2s} = 0.5
 
         Returns:
             {
@@ -329,10 +323,7 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 raise ValueError(
                     f"Line {line_num}: re_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should be a real number, "
                     f"but got a complex number: {value_str}")
-            if val_type == 'pure_imaginary':
-                raise ValueError(
-                    f"Line {line_num}: re_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should be a real number, "
-                    f"but got a pure imaginary number: {value_str}")
+
             # Create the key tuple
             param_key = (tree_idx, orbital1, orbital2)
             # Create SymPy symbol: re_T^{n}_{orbital1,orbital2}
@@ -360,10 +351,6 @@ def parse_hopping_parameters(hopping_parameters_file_name):
                 raise ValueError(
                     f"Line {line_num}: im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should be pure imaginary or 0, "
                     f"but got a full complex number: {value_str}")
-            if val_type == 'float' and value != 0:
-                raise ValueError(
-                    f"Line {line_num}: im_T^{{{tree_idx}}}_{{{orbital1},{orbital2}}} should be pure imaginary or 0, "
-                    f"but got a non-zero real number: {value_str}")
 
             # Create the key tuple
             param_key = (tree_idx, orbital1, orbital2)
@@ -646,10 +633,12 @@ def substitute_hopping_parameters(hamiltonian_data: dict,hopping_params:dict, ve
             f"  {missing_names}\n"
             f"Please ensure all hopping parameters used in H(k) are defined in the parameters file."
         )
-    for k,v in substitution_dict.items():
-        print(f"key={k}, value={v}")
+
     # Perform the substitution directly
     hamiltonian_with_values = hamiltonian.subs(substitution_dict)
+    # hamiltonian_with_values=deepcopy(hamiltonian)
+    # for key, value in substitution_dict.items():
+    #     hamiltonian_with_values.subs([(key,value)])
     hamiltonian_with_values=sp.simplify(hamiltonian_with_values)
     # sp.pprint(hamiltonian_with_values)
     # df=hamiltonian_with_values-hamiltonian_with_values.H
