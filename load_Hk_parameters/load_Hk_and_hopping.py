@@ -598,6 +598,8 @@ def substitute_hopping_parameters(hamiltonian_data: dict,hopping_params:dict, ve
     if 'substitution_dict' not in hopping_params:
         raise KeyError("hopping_parameters must contain 'substitution_dict' key")
     hamiltonian = hamiltonian_data['hamiltonian']
+    # df=hamiltonian-hamiltonian.H
+    # sp.pprint(f"df={df}")
     substitution_dict = hopping_params['substitution_dict']
     if not substitution_dict:
         raise ValueError("substitution_dict is empty - no hopping parameters to substitute")
@@ -606,13 +608,50 @@ def substitute_hopping_parameters(hamiltonian_data: dict,hopping_params:dict, ve
     # print(original_symbols)
     # Identify which symbols are hopping parameters
     hopping_symbols = set(substitution_dict.keys())
+    # print(f"hopping_symbols={hopping_symbols}")
     k_symbols_list = hamiltonian_data.get('k_symbols', [])
     k_symbols_set = set([sp.Symbol(item,real=True ) for item in k_symbols_list])
     # Find which hopping parameters actually appear in H
     hopping_in_H = original_symbols.intersection(hopping_symbols)
+    # print(f"hopping_in_H={hopping_in_H}")
+    # print(f"hopping_symbols={hopping_symbols}")
     # Find which k symbols appear in H
     k_in_H = original_symbols.intersection(k_symbols_set)
     # Find any unexpected symbols (not hopping params and not k)
     other_symbols = original_symbols.difference(hopping_symbols).difference(k_symbols_set)
-    print(f"k_symbols_set={k_symbols_set}")
+    # print(f"other_symbols={other_symbols}")
+    #check : other_symbols should be empty
+    if other_symbols:
+        symbol_names = ', '.join(str(s) for s in sorted(other_symbols, key=str))
+        raise ValueError(
+            f"Unexpected symbols found in Hamiltonian :\n"
+            f"  {symbol_names}\n"
+        )
+    # Check that all hopping parameters are used in the Hamiltonian
+    unused_hopping_params = hopping_symbols.difference(hopping_in_H)
+    if unused_hopping_params:
+        unused_names = ', '.join(str(s) for s in sorted(unused_hopping_params, key=str))
+        raise ValueError(
+            f"The following hopping parameters are defined but not used in the Hamiltonian:\n"
+            f"  {unused_names}\n"
+            f"This may indicate a mismatch between the parameter file and the Hamiltonian structure."
+        )
 
+    # Check that all hopping symbols in H have defined values
+    missing_hopping_params = hopping_in_H.difference(hopping_symbols)
+    if missing_hopping_params:
+        missing_names = ', '.join(str(s) for s in sorted(missing_hopping_params, key=str))
+        raise ValueError(
+            f"The following hopping parameters appear in the Hamiltonian but have no defined values:\n"
+            f"  {missing_names}\n"
+            f"Please ensure all hopping parameters used in H(k) are defined in the parameters file."
+        )
+    for k,v in substitution_dict.items():
+        print(f"key={k}, value={v}")
+    # Perform the substitution directly
+    hamiltonian_with_values = hamiltonian.subs(substitution_dict)
+    hamiltonian_with_values=sp.simplify(hamiltonian_with_values)
+    # sp.pprint(hamiltonian_with_values)
+    # df=hamiltonian_with_values-hamiltonian_with_values.H
+    # sp.pprint(f"df={df}")
+    return hamiltonian_with_values
