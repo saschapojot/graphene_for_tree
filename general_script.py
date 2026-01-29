@@ -3944,6 +3944,10 @@ print(f"\nNext steps:")
 print(f"1. Edit the file: {param_input_file}")
 print(f"2. Fill in values for all independent parameters")
 print("=" * 80)
+
+# print("free  symbols")
+# for item in H.free_symbols:
+#     sp.pprint(item)
 # grand_total_matrices = 0
 #
 # print(f"{'Atom ID':<20} | {'Atom Type':<10} | {'Matrix Count (Neighbors)':<25}")
