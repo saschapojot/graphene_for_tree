@@ -19,6 +19,5 @@ if (len(sys.argv) != 2):
 confFileName = str(sys.argv[1])
 
 hamiltonian_data=load_hamiltonian_and_hopping_from_path(confFileName,True)
-
-H_substituted=substitute_hopping_parameters(hamiltonian_data,True)
 # print(hamiltonian_data["hopping_parameters"])
+H_substituted=substitute_hopping_parameters(hamiltonian_data,True)
