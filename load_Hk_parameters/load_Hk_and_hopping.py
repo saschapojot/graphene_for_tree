@@ -48,7 +48,7 @@ def get_data_file_paths(data_dir: str) -> dict:
      Construct paths to all expected data files in the directory.
 
     Args:
-        data_dir:  Directory containing the data files (as string)
+        data_dir: data directory
 
     Returns:
         Dictionary mapping file types to file paths (as strings)

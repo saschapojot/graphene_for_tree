@@ -20,6 +20,7 @@ from classes.class_defs import frac_to_cartesian, atomIndex, hopping, vertex, T_
 # ==============================================================================
 
 argErrCode = 20
+save_err_code=30
 if (len(sys.argv) != 2):
     print("wrong number of arguments")
     print("example: python preprocessing.py /path/to/mc.conf")
@@ -407,6 +408,79 @@ print("\n" + "=" * 60)
 print("ORBITAL COMPLETION FINISHED")
 print("=" * 60)
 
+# ==============================================================================
+# Save preprocessing data to pickle file
+# ==============================================================================
+print("\n" + "=" * 80)
+print("SAVING PREPROCESSING DATA")
+print("=" * 80)
+# Prepare comprehensive preprocessing data package
+preprocessing_data = {
+    # Core configuration
+    'parsed_config': parsed_config,
+
+    # Space group representations
+    'space_group_representations': space_group_representations,
+
+    # NumPy arrays for efficient computation
+    'space_group_bilbao_cart': space_group_bilbao_cart,  # List of np.ndarray
+    'origin_cart': origin_cart,  # np.ndarray (3,)
+
+    # Orbital representation matrices
+    'repr_s_np': repr_s_np,  # np.ndarray (num_ops, 1, 1)
+    'repr_p_np': repr_p_np,  # np.ndarray (num_ops, 3, 3)
+    'repr_d_np': repr_d_np,  # np.ndarray (num_ops, 5, 5)
+    'repr_f_np': repr_f_np,  # np.ndarray (num_ops, 7, 7)
+
+    # Orbital completion results
+    'orbital_completion_results': orbital_completion_results,
+
+    # Orbital mapping dictionary
+    'orbital_map': orbital_map,
+
+    # Metadata
+    'creation_date': datetime.now().isoformat(),
+    'script_version': '1.0',
+    'description': 'Preprocessing data for tight-binding model construction'
+}
+
+# Determine output file path
+config_file_path = parsed_config["config_file_path"]
+config_dir = Path(config_file_path).parent
+preprocessing_pickle_file = str(config_dir) + "/preprocessed_input.pkl"
+# Save to pickle file
+try:
+    with open(preprocessing_pickle_file, 'wb') as f:
+        pickle.dump(preprocessing_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # Calculate file size
+    file_size = Path(preprocessing_pickle_file).stat().st_size
+    if file_size < 1024:
+        size_str = f"{file_size} bytes"
+    elif file_size < 1024 ** 2:
+        size_str = f"{file_size / 1024:.2f} KB"
+    else:
+        size_str = f"{file_size / (1024 ** 2):.2f} MB"
+
+    print(f"✓ Preprocessing data saved successfully!")
+    print(f"  File: {preprocessing_pickle_file}")
+    print(f"  Size: {size_str}")
+    print(f"\nSaved data includes:")
+    print(f"  - parsed_config: Configuration dictionary")
+    print(f"  - space_group_representations: Full representation data")
+    print(f"  - space_group_bilbao_cart: {len(space_group_bilbao_cart)} operations")
+    print(f"  - origin_cart: Space group origin")
+    print(f"  - repr_s/p/d/f_np: Orbital representation matrices")
+    print(f"  - orbital_completion_results: Symmetry-completed orbitals")
+    print(f"  - orbital_map: 78-dimensional orbital mapping")
+
+
+except Exception as e:
+    print(f"✗ Failed to save preprocessing data!")
+    print(f"  Error: {e}")
+    exit(save_err_code)
+
+print("=" * 80)
 
 def compute_dist(center_atom, unit_cell_atoms, search_range=10, radius=None, search_dim=2):
     """
