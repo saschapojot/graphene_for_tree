@@ -2,6 +2,9 @@ import pickle
 import re
 import sys
 from pathlib import Path
+
+import numpy as np
+
 # Add project root to Python path
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
@@ -75,3 +78,202 @@ def validate_k_path_file(file_paths_dict: dict) -> None:
     if missing_files:
         error_message = "The following required files were not found:\n" + "\n".join(missing_files)
         raise FileNotFoundError(error_message)
+
+
+# ==============================================================================
+# Define regex patterns for parsing
+# ==============================================================================
+# General key=value pattern
+key_value_pattern = r'^([^=\s]+)\s*=\s*([^=]*)\s*$'
+# Pattern for floating point numbers (including scientific notation)
+float_pattern = r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?"
+
+#regex for fractional coordinates
+# 1D: x (Single value)
+fractional_coord_1d_pattern = rf"^\s*({float_pattern})\s*$"
+
+# 2D: x, y (Comma separated)
+fractional_coord_2d_pattern=rf"^\s*({float_pattern})\s*,\s*({float_pattern})\s*$"
+
+# 3D: x, y, z (Comma separated, based on your input)
+fractional_coord_3d_pattern = rf"^\s*({float_pattern})\s*,\s*({float_pattern})\s*,\s*({float_pattern})\s*$"
+
+def removeCommentsAndEmptyLines(file):
+    """
+    Remove comments and empty lines from configuration file
+
+    Comments start with # and continue to end of line
+    Empty lines (or lines with only whitespace) are removed
+
+    :param file: conf file path
+    :return: list of cleaned lines (comments and empty lines removed)
+    """
+    with open(file, "r") as fptr:
+        lines = fptr.readlines()
+
+    linesToReturn = []
+    for oneLine in lines:
+        # Remove comments (everything after #) and strip whitespace
+        oneLine = re.sub(r'#.*$', '', oneLine).strip()
+
+        # Only add non-empty lines
+        if oneLine:
+            linesToReturn.append(oneLine)
+
+    return linesToReturn
+
+def parse_preprocessed_input(preprocessed_input_file_name):
+    """
+    Args:
+        preprocessed_input_file_name: contains parsed information, is a pkl file
+
+    Returns: a dictionary containing all parsed information
+    """
+    try:
+        with open(preprocessed_input_file_name, 'rb') as f:
+            data = pickle.load(f)
+        return data
+    except FileNotFoundError:
+        raise FileNotFoundError(f"The preprocessed input file was not found at: {preprocessed_input_file_name}")
+    except pickle.UnpicklingError:
+        raise ValueError(f"Error decoding the pickle file: {preprocessed_input_file_name}. It may be corrupted.")
+    except Exception as e:
+        raise RuntimeError(f"An unexpected error occurred while loading {preprocessed_input_file_name}: {e}")
+
+
+def read_k_path_conf(k_path_file_name: str, processed_input_data):
+    """
+    Reads the k-path configuration file and parses coordinates based on system dimensionality.
+
+    Args:
+        k_path_file_name: Path to the k_path.conf file.
+        processed_input_data: Dictionary containing parsed input data (must contain 'dim').
+
+    Returns:
+        list: A list of dictionaries, where each dictionary represents a k-point:
+              {'label': str, 'coords': [float, ...]}
+    """
+    # 1. Retrieve dimensionality
+    try:
+        dim = processed_input_data["parsed_config"]['dim']
+    except KeyError:
+        raise KeyError("The processed_input_data dictionary is missing 'parsed_config' or 'dim'.")
+
+    # 2. Get cleaned lines from file
+    linesWithCommentsRemoved = removeCommentsAndEmptyLines(k_path_file_name)
+
+    parsed_k_points = []
+
+    # 3. Parse each line
+    for oneLine in linesWithCommentsRemoved:
+        # Check if line matches key=value format
+        matchLine = re.match(key_value_pattern, oneLine)
+
+        if matchLine:
+            key_label = matchLine.group(1).strip()
+            value_str = matchLine.group(2).strip()
+
+
+
+            # Validate and parse based on dimension
+            if dim == 1:
+                coord_match = re.match(fractional_coord_1d_pattern, value_str)
+                if coord_match:
+                    coords = [float(coord_match.group(1))]
+                else:
+                    raise ValueError(
+                        f"Dimension mismatch: System is 1D, but value '{value_str}' for key '{key_label}' is not a valid 1D coordinate.")
+
+            elif dim == 2:
+                coord_match = re.match(fractional_coord_2d_pattern, value_str)
+                if coord_match:
+                    coords = [float(coord_match.group(1)), float(coord_match.group(2))]
+                else:
+                    raise ValueError(
+                        f"Dimension mismatch: System is 2D, but value '{value_str}' for key '{key_label}' is not a valid 2D coordinate.")
+
+            elif dim == 3:
+                coord_match = re.match(fractional_coord_3d_pattern, value_str)
+                if coord_match:
+                    coords = [float(coord_match.group(1)), float(coord_match.group(2)), float(coord_match.group(3))]
+                else:
+                    raise ValueError(
+                        f"Dimension mismatch: System is 3D, but value '{value_str}' for key '{key_label}' is not a valid 3D coordinate.")
+
+            else:
+                raise ValueError(
+                    f"Unsupported dimension found in processed input: {dim}. Only 1, 2, or 3 are supported.")
+
+            # If successful, append to results
+            parsed_k_points.append({
+                "label": key_label,
+                "coords": coords
+            })
+
+        else:
+            # Line doesn't match key=value format
+            print("line: " + oneLine + " is discarded.", file=sys.stderr)
+
+    return parsed_k_points
+
+
+def compute_Brillouin_zone_basis(processed_input_data):
+    parsed_config=processed_input_data["parsed_config"]
+    basis = parsed_config.get('lattice_basis', [])
+    a0,a1,a2=basis
+    a0=np.array(a0)
+    a1= np.array(a1)
+    a2 = np.array(a2)
+
+    #volume, may be signed if a0,a1,a2 do not have positive orientation
+    Omega=np.dot(a0,np.cross(a1,a2))
+
+    b0=2*np.pi*np.cross(a1,a2)/Omega
+
+    b1=2*np.pi*np.cross(a2,a0)/Omega
+
+    b2=2*np.pi*np.cross(a0,a1)/Omega
+
+    return b0,b1,b2
+
+def generate_interpolation(point_start_frac, point_end_frac,BZ_basis_vectors,interpolate_point_num=15):
+
+
+    # 1. Convert Fractional to Cartesian
+    # We use zip to pair the coordinate component (u, v, w) with the basis vector (b0, b1, b2)
+    # This automatically handles 1D, 2D, or 3D depending on the length of the inputs.
+    start_cart = sum(c * b for c, b in zip(point_start_frac, BZ_basis_vectors))
+    end_cart = sum(c * b for c, b in zip(point_end_frac, BZ_basis_vectors))
+    # 2. Linear Interpolation
+    # Create a parameter t going from 0 to 1
+    t = np.linspace(0, 1, interpolate_point_num)
+    # Vector from start to end
+    vector_diff = end_cart - start_cart
+    # Calculate path: Start + t * (End - Start)
+    # np.outer allows us to multiply the shape (N,) t array by the shape (3,) vector
+    #each row is an interpolated point
+    interpolated_cart_coords = start_cart + np.outer(t, vector_diff)
+    # 3. Calculate Distances
+    # Euclidean distance of the full segment
+    segment_length = np.linalg.norm(vector_diff)
+    distances = t * segment_length
+
+    return interpolated_cart_coords, distances
+
+
+def interpolate_path(parsed_k_points,processed_input_data):
+    b0,b1,b2=compute_Brillouin_zone_basis(processed_input_data)
+    dim = processed_input_data["parsed_config"]['dim']
+    if dim==1:
+        BZ_basis_vectors=[b0]
+    elif dim==2:
+        BZ_basis_vectors=[b0,b1]
+    elif dim==3:
+        BZ_basis_vectors=[b0,b1,b2]
+    else:
+        raise ValueError(f"Unsupported dimension: {dim}. Only 1, 2, or 3 are supported.")
+
+
+
+
+

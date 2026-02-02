@@ -35,3 +35,9 @@ Hk=substitute_hopping_parameters(h,hop,True)
 
 k_path_and_input_files=get_file_paths(conf_dir)
 validate_k_path_file(k_path_and_input_files)
+k_path_file_name=k_path_and_input_files["k_path_file"]
+processed_input_file_name=k_path_and_input_files["preprocessed_input_file"]
+
+processed_input_data=parse_preprocessed_input(processed_input_file_name)
+parsed_k_points=read_k_path_conf(k_path_file_name,processed_input_data)
+b0,b1,b2=compute_Brillouin_zone_basis(processed_input_data)
