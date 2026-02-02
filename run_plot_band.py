@@ -41,3 +41,11 @@ processed_input_file_name=k_path_and_input_files["preprocessed_input_file"]
 processed_input_data=parse_preprocessed_input(processed_input_file_name)
 parsed_k_points=read_k_path_conf(k_path_file_name,processed_input_data)
 b0,b1,b2=compute_Brillouin_zone_basis(processed_input_data)
+interpolate_point_num=15
+all_coords, all_distances, high_symmetry_indices, high_symmetry_labels=interpolate_path(parsed_k_points, processed_input_data, interpolate_point_num)
+# print(f"len(all_coords)={len(all_coords)}")
+# print(len(all_distances))
+# print(f"all_distances={all_distances}")
+# print(f"high_symmetry_indices={high_symmetry_indices}")
+# print(f"high_symmetry_labels={high_symmetry_labels}")
+print(f"all_coords={all_coords}")

@@ -261,17 +261,103 @@ def generate_interpolation(point_start_frac, point_end_frac,BZ_basis_vectors,int
     return interpolated_cart_coords, distances
 
 
-def interpolate_path(parsed_k_points,processed_input_data):
-    b0,b1,b2=compute_Brillouin_zone_basis(processed_input_data)
+def interpolate_path(parsed_k_points, processed_input_data, interpolate_point_num=15):
+    """
+    Interpolates between consecutive k-points to create a continuous path in reciprocal space.
+
+    Args:
+        parsed_k_points: List of dicts, each containing 'label' and 'coords' for high-symmetry points.
+        processed_input_data: Dictionary containing system configuration (lattice basis, dim).
+        interpolate_point_num: Number of points to generate per segment.
+
+    Returns:
+        tuple: (all_coords, all_distances, high_symmetry_indices, high_symmetry_labels)
+               - all_coords: (N, 3) array of Cartesian coordinates along the path.
+               - all_distances: (N,) array of cumulative distances along the path.
+               - high_symmetry_indices: List of indices in all_coords corresponding to the input k-points.
+               - high_symmetry_labels: List of labels corresponding to high_symmetry_indices.
+    """
+    # 1. Get Reciprocal Lattice Basis Vectors
+    b0, b1, b2 = compute_Brillouin_zone_basis(processed_input_data)
     dim = processed_input_data["parsed_config"]['dim']
-    if dim==1:
-        BZ_basis_vectors=[b0]
-    elif dim==2:
-        BZ_basis_vectors=[b0,b1]
-    elif dim==3:
-        BZ_basis_vectors=[b0,b1,b2]
+
+    if dim == 1:
+        BZ_basis_vectors = [b0]
+    elif dim == 2:
+        BZ_basis_vectors = [b0, b1]
+    elif dim == 3:
+        BZ_basis_vectors = [b0, b1, b2]
     else:
         raise ValueError(f"Unsupported dimension: {dim}. Only 1, 2, or 3 are supported.")
+
+    if len(parsed_k_points) < 2:
+        raise ValueError("At least two k-points are required to interpolate a path.")
+
+    all_coords = []
+    all_distances = []
+    high_symmetry_indices = []
+    high_symmetry_labels = []
+
+    cumulative_distance = 0.0
+    current_index_count = 0
+
+    # 2. Loop through consecutive pairs
+    for i in range(len(parsed_k_points) - 1):
+        start_point = parsed_k_points[i]
+        end_point = parsed_k_points[i + 1]
+
+        start_frac = start_point['coords']
+        end_frac = end_point['coords']
+
+        # Call the helper function
+        # Note: generate_interpolation returns (coords, distances_from_start_of_segment)
+        segment_coords, segment_distances = generate_interpolation(
+            start_frac,
+            end_frac,
+            BZ_basis_vectors,
+            interpolate_point_num
+        )
+
+        # 3. Accumulate Data
+        # For the very first point of the entire path, we add everything.
+        # For subsequent segments, we skip the first point to avoid duplication
+        # because the end of segment i is the start of segment i+1.
+        if i == 0:
+            # Record the start label
+            high_symmetry_indices.append(current_index_count)
+            high_symmetry_labels.append(start_point['label'])
+
+            # Add all points
+            all_coords.append(segment_coords)
+            # Add cumulative distance offset
+            all_distances.append(segment_distances + cumulative_distance)
+
+            current_index_count += len(segment_coords)
+        else:
+            # Skip the first point (it overlaps with previous segment's last point)
+            all_coords.append(segment_coords[1:])
+
+            # Add cumulative distance offset, skipping first distance
+            all_distances.append(segment_distances[1:] + cumulative_distance)
+
+            current_index_count += len(segment_coords) - 1
+
+        # Update cumulative distance for the next segment
+        # segment_distances[-1] is the length of the current segment
+        cumulative_distance += segment_distances[-1]
+
+        # Record the end label of this segment
+        high_symmetry_indices.append(current_index_count - 1)
+        high_symmetry_labels.append(end_point['label'])
+
+    # 4. Concatenate arrays
+    all_coords = np.vstack(all_coords)
+    all_distances = np.concatenate(all_distances)
+
+    return all_coords, all_distances, high_symmetry_indices, high_symmetry_labels
+
+
+
 
 
 
