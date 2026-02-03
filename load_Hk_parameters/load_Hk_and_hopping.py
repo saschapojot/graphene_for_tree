@@ -11,7 +11,13 @@ import pickle
 import numpy as np
 import sympy as sp
 import re
+import sys
 from copy import deepcopy
+
+# Add project root to Python path
+project_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(project_root))
+
 # Exit codes for different error types
 fmtErrStr = "format error: "
 formatErrCode = 1        # Format/syntax errors in conf file
@@ -644,3 +650,11 @@ def substitute_hopping_parameters(hamiltonian_data: dict,hopping_params:dict, ve
     # df=hamiltonian_with_values-hamiltonian_with_values.H
     # sp.pprint(f"df={df}")
     return hamiltonian_with_values
+
+
+def subroutine_get_Hk(confFileName,verbose=True):
+
+    h, hop = load_hamiltonian_and_hopping_from_path(confFileName, verbose)
+    Hk = substitute_hopping_parameters(h, hop, True)
+    return Hk
+
