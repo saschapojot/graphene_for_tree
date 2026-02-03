@@ -41,17 +41,17 @@ def get_file_paths(data_dir: str)-> dict:
     Args:
         data_dir: data directory
 
-    Returns: dict containing k_path file path and preprocessed_input_file path
+    Returns: dict containing BZ_path file path and preprocessed_input_file path
 
     """
     data_path = Path(data_dir)
     return {
-        "k_path_file": str(data_path / "k_path.conf"),
+        "BZ_path_file": str(data_path / "BZ_path.conf"),
         "preprocessed_input_file": str(data_path/"preprocessed_input.pkl")
     }
 
 
-def validate_k_path_file(file_paths_dict: dict) -> None:
+def validate_BZ_path_file(file_paths_dict: dict) -> None:
     """
     Verify that the k-path configuration file and preprocessed input exist.
     Args:
@@ -65,7 +65,7 @@ def validate_k_path_file(file_paths_dict: dict) -> None:
     """
     missing_files = []
     file_descriptions = {
-        'k_path_file': "k-path endpoints",
+        'BZ_path_file': "k-path endpoints",
         'preprocessed_input_file': "processed input parameters"
     }
     for key, description in file_descriptions.items():
@@ -141,12 +141,12 @@ def parse_preprocessed_input(preprocessed_input_file_name):
         raise RuntimeError(f"An unexpected error occurred while loading {preprocessed_input_file_name}: {e}")
 
 
-def read_k_path_conf(k_path_file_name: str, processed_input_data):
+def read_BZ_path_conf(BZ_path_file_name: str, processed_input_data):
     """
     Reads the k-path configuration file and parses coordinates based on system dimensionality.
 
     Args:
-        k_path_file_name: Path to the k_path.conf file.
+        BZ_path_file_name: Path to the BZ_path.conf file.
         processed_input_data: Dictionary containing parsed input data (must contain 'dim').
 
     Returns:
@@ -160,7 +160,7 @@ def read_k_path_conf(k_path_file_name: str, processed_input_data):
         raise KeyError("The processed_input_data dictionary is missing 'parsed_config' or 'dim'.")
 
     # 2. Get cleaned lines from file
-    linesWithCommentsRemoved = removeCommentsAndEmptyLines(k_path_file_name)
+    linesWithCommentsRemoved = removeCommentsAndEmptyLines(BZ_path_file_name)
 
     parsed_k_points = []
 
@@ -357,9 +357,106 @@ def interpolate_path(parsed_k_points, processed_input_data, interpolate_point_nu
     return all_coords, all_distances, high_symmetry_indices, high_symmetry_labels
 
 
+def obtain_quantum_number_k(all_coords,processed_input_data):
+    """
+    Calculates the projection of Brillouin zone points (p) onto the real-space lattice vectors (a_j).
+    These projections k_i = (p · a_j) represent the dimensionless quantum numbers (phases)
+     associated with the Periodic Boundary Conditions (PBC) along each lattice vector.
+    Args:
+        all_coords:   A numpy array of shape (N, 3) containing Cartesian coordinates
+                    of points p in the Brillouin Zone.
+        processed_input_data:  A dictionary containing the system configuration,
+                              specifically the 'lattice_basis' (a0, a1, a2).
+
+    Returns:
+        A numpy array of shape (N, 3) containing the dimensionless quantum numbers k.
+                       - Column 0: k_0 = p · a0
+                       - Column 1: k_1 = p · a1
+                       - Column 2: k_2 = p · a2
+
+    """
+
+    # 1. Extract real-space lattice vectors (a_j)
+    parsed_config = processed_input_data["parsed_config"]
+    basis = parsed_config.get('lattice_basis', [])
+    a0, a1, a2 = basis
+    a0 = np.array(a0)
+    a1 = np.array(a1)
+    a2 = np.array(a2)
+    # 2. Stack vectors into a (3, 3) matrix where each row is a basis vector
+    # Matrix A = [ -- a0 -- ]
+    #            [ -- a1 -- ]
+    #            [ -- a2 -- ]
+    # Shape: (3, 3)
+    real_space_basis_matrix = np.array([a0, a1, a2])
+    # 3. Perform vectorized dot product to obtain quantum numbers k
+    # Calculation: k = p @ A^T
+    #
+    # Dimensions:
+    # all_coords (p): (N, 3)
+    # real_space_basis_matrix.T (A^T): (3, 3) (Vectors become columns)
+    #
+    # Resulting Matrix (k): (N, 3)
+    # Column 0: Projection of p onto a0 (p · a0)
+    # Column 1: Projection of p onto a1 (p · a1)
+    # Column 2: Projection of p onto a2 (p · a2)
+    quantum_numbers_k = all_coords @ real_space_basis_matrix.T
+    return quantum_numbers_k
 
 
 
+def subroutine_get_interpolated_points_in_BZ_and_quantum_number_k(confFileName,interpolate_point_num=15):
+    """
+    Main driver function to load configuration, interpolate the path in the Brillouin Zone,
+    and calculate the corresponding quantum numbers.
 
+    This subroutine orchestrates the entire process:
+    1. Resolves the data directory based on the provided configuration file path.
+    2. Locates necessary configuration and data files (BZ_path.conf and preprocessed_input.pkl).
+    3. Loads system parameters (dimensionality, lattice basis).
+    4. Reads high-symmetry points defined in BZ_path.conf.
+    5. Interpolates a path of points between these high-symmetry points.
+    6. Projects these points onto real-space lattice vectors to get quantum numbers.
+
+    Args:
+        confFileName: Path to the main configuration file (used to locate the data directory).
+        interpolate_point_num: Number of points to interpolate per segment between high-symmetry points.
+
+
+    Returns:
+        tuple: (all_coords, all_distances, high_symmetry_indices, high_symmetry_labels, quantum_numbers_k, processed_input_data)
+        - all_coords: (N, 3) array of Cartesian coordinates (p) in the BZ.
+        - all_distances: (N,) array of cumulative distances along the path (for plotting).
+        - high_symmetry_indices: List of indices in all_coords where high-symmetry points occur.
+        - high_symmetry_labels: List of string labels for the high-symmetry points.
+         - quantum_numbers_k: (N, 3) array of dimensionless quantum numbers (k = p · a_j).
+
+    """
+    # 1. Resolve the directory containing data files based on the config file path
+    conf_dir = get_data_directory(confFileName)
+
+    # 2. Locate and validate input files (BZ_path.conf and preprocessed input)
+    BZ_path_and_input_files=get_file_paths(conf_dir)
+    validate_BZ_path_file(BZ_path_and_input_files)
+
+    BZ_path_file_name = BZ_path_and_input_files["BZ_path_file"]
+    processed_input_file_name = BZ_path_and_input_files["preprocessed_input_file"]
+
+    # 3. Load the preprocessed system data (lattice vectors, dimensions, etc.)
+    processed_input_data = parse_preprocessed_input(processed_input_file_name)
+
+    # 4. Parse the high-symmetry points from the BZ path configuration file
+    parsed_k_points = read_BZ_path_conf(BZ_path_file_name, processed_input_data)
+
+    # 5. Generate the interpolated path in Cartesian coordinates (p)
+    # This returns the coordinates, cumulative distance for plotting, and indices/labels for the ticks.
+    all_coords, all_distances, high_symmetry_indices, high_symmetry_labels = interpolate_path(parsed_k_points,
+                                                                                              processed_input_data,
+                                                                                              interpolate_point_num)
+    # 6. Calculate dimensionless quantum numbers (k)
+    # Projects the Cartesian BZ points (p) onto the real-space lattice vectors (a_j).
+    quantum_numbers_k = obtain_quantum_number_k(all_coords, processed_input_data)
+
+    return all_coords, all_distances, high_symmetry_indices, high_symmetry_labels,quantum_numbers_k,processed_input_data
 
 

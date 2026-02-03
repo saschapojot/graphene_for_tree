@@ -9,6 +9,7 @@ from classes.class_defs import frac_to_cartesian, atomIndex, hopping, vertex, T_
 
 from load_Hk_parameters.load_Hk_and_hopping import *
 from plot_energy_band.load_path_in_Brillouin_zone import *
+from plot_energy_band.block_diagonalization import *
 
 argErrCode = 20
 if (len(sys.argv) != 2):
@@ -19,33 +20,9 @@ if (len(sys.argv) != 2):
 
 confFileName = str(sys.argv[1])
 
-conf_dir=get_data_directory(confFileName)
-
-file_paths=get_data_file_paths(conf_dir)
-
-H_file=file_paths["hamiltonian_pickle"]
-hop_file=file_paths["parameters"]
-
-h,hop=load_hamiltonian_and_hopping_from_path(confFileName,True)
-h_mat=h['hamiltonian']
-# df=h_mat-h_mat.H
-# sp.pprint(sp.simplify(df))
-Hk=substitute_hopping_parameters(h,hop,True)
+Hk=subroutine_get_Hk(confFileName)
 
 
-k_path_and_input_files=get_file_paths(conf_dir)
-validate_k_path_file(k_path_and_input_files)
-k_path_file_name=k_path_and_input_files["k_path_file"]
-processed_input_file_name=k_path_and_input_files["preprocessed_input_file"]
+all_coords, all_distances, high_symmetry_indices, high_symmetry_labels,quantum_numbers_k,processed_input_data=subroutine_get_interpolated_points_in_BZ_and_quantum_number_k(confFileName)
 
-processed_input_data=parse_preprocessed_input(processed_input_file_name)
-parsed_k_points=read_k_path_conf(k_path_file_name,processed_input_data)
-b0,b1,b2=compute_Brillouin_zone_basis(processed_input_data)
-interpolate_point_num=15
-all_coords, all_distances, high_symmetry_indices, high_symmetry_labels=interpolate_path(parsed_k_points, processed_input_data, interpolate_point_num)
-# print(f"len(all_coords)={len(all_coords)}")
-# print(len(all_distances))
-# print(f"all_distances={all_distances}")
-# print(f"high_symmetry_indices={high_symmetry_indices}")
-# print(f"high_symmetry_labels={high_symmetry_labels}")
-print(f"all_coords={all_coords}")
+Hk_symbolic_to_np(Hk,processed_input_data)
