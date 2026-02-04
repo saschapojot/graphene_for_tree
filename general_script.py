@@ -3903,8 +3903,6 @@ args_list = [
 num_processes = multiprocessing.cpu_count()
 print(f"Using {num_processes} processes for parallel computation...")
 
-# Create process pool and map work
-all_roots_reconstructed_swapped = []
 
 with Pool(processes=num_processes) as pool:
     # Use imap for progress tracking (optional) or map for simplicity
