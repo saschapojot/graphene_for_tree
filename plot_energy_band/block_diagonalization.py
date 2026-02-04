@@ -251,7 +251,7 @@ def subroutine_eigen_problem_for_energy_band_plot(confFileName,num_processes=Non
     directory = conf_file_path.parent
     # Construct the output pickle file path
     out_pickle_file_name = str(directory / "plotting_band_data.pkl")
-
+    # print(f"all_eigenvalues={all_eigenvalues}")
     data_to_save = {
         "all_coords": all_coords,
         "all_distances": all_distances,

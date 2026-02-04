@@ -23,4 +23,7 @@ this project is for testing symmetry analyzer core functionality
 # 2.2: parse the file containing path, load Hk, load hopping parameters
 # 2.3: compute eigenvalues, save to file
 # 2.4 load file from step 2.3, make plots
-2. python 
+2. python run_diagonalization_band_plotting.py  ./path/to/xxx.conf #same conf file as in step 1, 
+#step 2 diagonalize the k-space blocks, H(k)
+3. python run_plot_band.py ./path/to/xxx.conf #same conf file as in step 1, 
+#step 3 loads the data from step 2, and plots energy band

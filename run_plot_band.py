@@ -3,17 +3,18 @@ import sys
 
 import numpy as np
 import sympy as sp
+import matplotlib.pyplot as plt
+
 
 sp.init_printing(use_unicode=False, wrap_line=False)
-#self defined
-from classes.class_defs import frac_to_cartesian, atomIndex, hopping, vertex, T_tilde_total
-#loading Hk module
 
-from load_Hk_parameters.load_Hk_and_hopping import *
-from plot_energy_band.load_path_in_Brillouin_zone import *
+
+
 from plot_energy_band.block_diagonalization import *
 
 argErrCode = 20
+data_non_existent_err_code=21
+
 if (len(sys.argv) != 2):
     print("wrong number of arguments")
     print("example: python preprocessing.py /path/to/mc.conf")
@@ -22,35 +23,68 @@ if (len(sys.argv) != 2):
 
 confFileName = str(sys.argv[1])
 
-Hk=subroutine_get_Hk(confFileName)
+def load_plotting_band_data(confFileName):
+    conf_file_path = Path(confFileName)
+    directory = conf_file_path.parent
+    data_for_plotting_file_name=str(directory / "plotting_band_data.pkl")
+    try:
+        with open(data_for_plotting_file_name, 'rb') as f:
+            data_for_plotting = pickle.load(f)
+        print(f"Successfully loaded data from {data_for_plotting_file_name}")
+        return data_for_plotting
+    except FileNotFoundError:
+        print(f"Error: File not found at {data_for_plotting_file_name}")
+        return None
+    except Exception as e:
+        print(f"An error occurred while loading the pickle file: {e}")
+        return None
+
+data_for_plotting=load_plotting_band_data(confFileName)
+if data_for_plotting is None:
+    print("Error: Could not load data. Exiting.")
+    exit(data_non_existent_err_code)
 
 
-all_coords, all_distances, high_symmetry_indices, high_symmetry_labels,quantum_numbers_k,processed_input_data=subroutine_get_interpolated_points_in_BZ_and_quantum_number_k(confFileName)
+all_coords=data_for_plotting["all_coords"]
+all_distances=data_for_plotting["all_distances"]
+high_symmetry_indices=data_for_plotting["high_symmetry_indices"]
+high_symmetry_labels=data_for_plotting["high_symmetry_labels"]
+quantum_numbers_k=data_for_plotting["quantum_numbers_k"]
+all_eigenvalues=data_for_plotting["all_eigenvalues"]
+# all_eigenvectors=data_for_plotting["all_eigenvalues"]
+# print(all_eigenvalues)
 
-Hk_np=Hk_symbolic_to_np(Hk,processed_input_data)
+# --- Plotting bands ---
 
-Hk_matrices_all=generate_Hk_matrix(Hk_np,quantum_numbers_k,processed_input_data)
+# Create a figure
+plt.figure(figsize=(8, 6))
+# all_eigenvalues is typically shape (num_k_points, num_bands)
+# We iterate over the second dimension (bands) to plot each band line
+num_bands = all_eigenvalues.shape[1]
+for i in range(0,num_bands):
+    # Plot the i-th column (band) against the k-path distance
+    plt.plot(all_distances, all_eigenvalues[:, i], color='blue', linewidth=1.5)
 
-one_chunk=Hk_matrices_all[:3]
-h0=one_chunk[0]
-h1=one_chunk[1]
-h2=one_chunk[2]
+# Add vertical lines for high symmetry points
+for index in high_symmetry_indices:
+    # Map the index to the actual distance value
+    # Check bounds to avoid errors if index is out of range
+    if index < len(all_distances):
+        plt.axvline(x=all_distances[index], color='black', linestyle='--', linewidth=0.8)
 
+# Set x-ticks to be the high symmetry points
+valid_indices = [i for i in high_symmetry_indices if i < len(all_distances)]
+tick_locations = [all_distances[i] for i in valid_indices]
 
-vals0,vecs0=np.linalg.eigh(h0)
+plt.xticks(tick_locations, high_symmetry_labels)
 
-vals1,vecs1=np.linalg.eigh(h1)
+# Limit x-axis to the range of the path
+plt.xlim(all_distances[0], all_distances[-1])
 
-
-vals2,vecs2=np.linalg.eigh(h2)
-
-t_diag_start=datetime.now()
-all_eigenvalues, all_eigenvectors=diagonalize_all_Hk_matrices(Hk_matrices_all,12)
-t_diag_end=datetime.now()
-
-print("time: ",t_diag_end-t_diag_start )
-print(f"vals0={vals0}")
-print(f"vals1={vals1}")
-print(f"vals2={vals2}")
-
-print(f"all_eigenvalues={all_eigenvalues}")
+plt.ylabel("Energy")
+plt.title("Electronic Band Structure")
+plt.grid(alpha=0.3)
+conf_file_path = Path(confFileName)
+base_directory=conf_file_path.parent
+out_pic_file_name=str(base_directory/"band.png")
+plt.savefig(out_pic_file_name)
