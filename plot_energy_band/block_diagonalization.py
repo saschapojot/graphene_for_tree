@@ -3,6 +3,9 @@ import sympy as sp
 import numpy as np
 import sys
 from pathlib import Path
+from datetime import datetime
+import pickle
+
 
 from plot_energy_band.load_path_in_Brillouin_zone import  subroutine_get_interpolated_points_in_BZ_and_quantum_number_k
 from load_Hk_parameters.load_Hk_and_hopping import subroutine_get_Hk
@@ -16,20 +19,35 @@ sys.path.insert(0, str(project_root))
 
 
 def Hk_symbolic_to_np(Hk,processed_input_data):
+    """
+     Converts a symbolic Hamiltonian matrix (SymPy) into a fast, numerical Python function (NumPy-compatible).
+     This function validates that the symbolic matrix only contains momentum variables
+     k0 for 1d, k0, k1 for 2d, k0, k1, k2 for 3d
+     corresponding to the system's dimensionality. It ensures all physical parameters (hopping, on-site energy)
+     ave already been substituted.
+    Args:
+        Hk: The symbolic Hamiltonian matrix (sympy.Matrix).
+        processed_input_data: Dictionary containing parsed configuration, specifically the dimension 'dim'.
+
+    Returns:
+        Hk_np: A lambdified function. It takes (k0, k1, ...) as arguments and returns a numpy array.
+    """
+    # 1. Retrieve dimensionality from the configuration
     try:
         dim = processed_input_data["parsed_config"]['dim']
     except KeyError:
         raise KeyError("The processed_input_data dictionary is missing 'parsed_config' or 'dim'.")
 
-    #check Hk's free symbols
-    # Get the actual free symbols present in the symbolic matrix
+    # 2. Identify all free symbols currently in the Hamiltonian
+    # This includes k-points
     Hk_free_symbols = Hk.free_symbols
     # sp.pprint(hk_free_symbols)
-    # the naming convention: k0, k1, k2
+    # 3. Define the standard momentum symbols expected in the Hamiltonian
+    # The naming convention is fixed: k0, k1, k2 representing kx, ky, kz.
     k0 = sp.Symbol('k0', real=True)
     k1 = sp.Symbol('k1', real=True)
     k2 = sp.Symbol('k2', real=True)
-    # Determine the expected variables based on dimensionality
+    # 4. Determine the expected variables based on dimensionality
     if dim == 1:
         expected_vars = [k0]
     elif dim == 2:
@@ -40,9 +58,9 @@ def Hk_symbolic_to_np(Hk,processed_input_data):
         raise ValueError(f"Unsupported dimension: {dim}. Only 1, 2, or 3 are supported.")
 
     expected_vars_set = set(expected_vars)
-    # Check for undefined symbols
-    # We subtract the allowed k-points from the symbols found in Hk.
-    # If anything remains (e.g., an unsubstituted 't' or 'mu', dimension not matched), it's an error.
+    # 5. Validation: Check for un-substituted parameters
+    # We subtract the allowed k-variables from the symbols found in Hk.
+    # Any remaining symbols (e.g., 't', 'mu', 'alpha') indicate incomplete substitution.
     undefined_symbols = Hk_free_symbols - expected_vars_set
     if len(undefined_symbols) > 0:
         raise ValueError(
@@ -52,9 +70,10 @@ def Hk_symbolic_to_np(Hk,processed_input_data):
             "have been substituted with numerical values."
         )
 
-    # Convert to Numpy function (Lambdify)
-    # The resulting function will accept arguments corresponding to expected_vars
-    # e.g., if dim=2, func(k0_val, k1_val)
+    # 6. Create the numerical function (Lambdify)
+    # We convert the SymPy expression into a native Python function backed by NumPy.
+    # The resulting function 'Hk_np' will accept arguments matching 'expected_vars'.
+    # Example: If dim=2, calling Hk_np(0.5, 0.5) returns a numerical matrix.
     Hk_np = sp.lambdify(expected_vars, Hk, modules='numpy')
     return Hk_np
 
@@ -181,3 +200,71 @@ def diagonalize_all_Hk_matrices(Hk_matrices_all, num_processes=None):
 
 
 
+def subroutine_eigen_problem_for_energy_band_plot(confFileName,num_processes=None,interpolate_point_num=15,verbose=True):
+    """
+    Orchestrates the complete calculation of energy band plotting for a given system configuration.
+    This subroutine acts as the main driver. It performs the following steps:
+    1. Computes the symbolic Hamiltonian (Hk) using the configuration file.
+    2. Loads the k-point path in the Brillouin Zone (BZ) with interpolation.
+    3. Converts the symbolic Hamiltonian into a numerical function.
+    4. Generates numerical matrices for every k-point in the path.
+    5. Diagonalizes all matrices in parallel to obtain eigenvalues (bands) and eigenvectors.
+    6. Saves all relevant plotting data to a pickle file in the same directory as the input config.
+
+    Args:
+        confFileName: Path to the configuration file of crystal (e.g., './computation_examples/hBN/hBN_primitive.conf').
+        num_processes: Number of CPU cores for parallel diagonalization. If None, uses all available.
+        interpolate_point_num: Number of points to interpolate between high-symmetry points in the BZ path.
+        verbose: If True, prints status messages to the console.
+
+    Returns:
+        out_pickle_file_name: The absolute path string where the data dictionary was saved.
+
+    """
+    # 1. Load the symbolic Hamiltonian (Hk)
+    # This reads the hopping parameters and lattice configuration to build the symbolic matrix.
+    Hk = subroutine_get_Hk(confFileName,verbose)
+
+    # 2. Generate k-points path
+    # This loads the path through high-symmetry points in the Brillouin Zone
+    #and make interpolation between  high-symmetry points
+    # 'quantum_numbers_k' contains the actual  k0, k1, k2 coordinates (k0 for 1d; k0, k1 for 2d; k0, k1, k2 for 3d) for every point in the path.
+    # 'all_distances' is used for the x-axis when plotting the bands (cumulative distance in k-space).
+    all_coords, all_distances, high_symmetry_indices, high_symmetry_labels, quantum_numbers_k, processed_input_data = subroutine_get_interpolated_points_in_BZ_and_quantum_number_k(
+        confFileName,interpolate_point_num)
+
+    # 3. Convert Symbolic Hk to Numerical Function
+    # Validates dimensions and creates a fast lambdified function for matrix generation.
+    # Iterates over all k-points in 'quantum_numbers_k' and evaluates the Hamiltonian.
+    # Result is a large 3D array: (Total_K_Points, Dim, Dim).
+    Hk_np = Hk_symbolic_to_np(Hk, processed_input_data)
+
+    # 4. Generate Numerical Matrices
+    Hk_matrices_all = generate_Hk_matrix(Hk_np, quantum_numbers_k, processed_input_data)
+
+    t_diag_start = datetime.now()
+    all_eigenvalues, all_eigenvectors = diagonalize_all_Hk_matrices(Hk_matrices_all, num_processes)
+    t_diag_end = datetime.now()
+    print("diagonalization time: ", t_diag_end-t_diag_start)
+    # Extract the parent directory from the configuration file path
+    conf_file_path = Path(confFileName)
+    directory = conf_file_path.parent
+    # Construct the output pickle file path
+    out_pickle_file_name = str(directory / "plotting_band_data.pkl")
+
+    data_to_save = {
+        "all_coords": all_coords,
+        "all_distances": all_distances,
+        "high_symmetry_indices": high_symmetry_indices,
+        "high_symmetry_labels": high_symmetry_labels,
+        "quantum_numbers_k": quantum_numbers_k,
+        "all_eigenvalues": all_eigenvalues,
+        "all_eigenvectors": all_eigenvectors
+    }
+
+    if verbose:
+        print(f"Saving energy band data to: {out_pickle_file_name}")
+
+    with open(out_pickle_file_name, 'wb') as f:
+        pickle.dump(data_to_save, f)
+    return out_pickle_file_name
