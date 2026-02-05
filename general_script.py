@@ -299,6 +299,21 @@ combined_input = {
 # Convert to JSON for subprocess
 combined_input_json = json.dumps(combined_input)
 
+# #run checking space group compatibility
+# compatibility_result= subprocess.run(
+#     ["python3", "./symmetry/check_space_group_compatible.py"],
+#     input=combined_input_json,
+#     capture_output=True,
+#     text=True
+# )
+# # Check ifchecking space group compatibility succeeded
+# if compatibility_result.returncode != 0:
+#     print("Compatibility check failed!")
+#     print(f"Return code: {compatibility_result.returncode}")
+#     print("Error output:")
+#     print(compatibility_result.stderr)
+#     exit(compatibility_result.returncode)
+
 # Run complete_orbitals.py
 completing_result = subprocess.run(
     ["python3", "./symmetry/complete_orbitals.py"],
@@ -314,6 +329,8 @@ if completing_result.returncode != 0:
     print("Error output:")
     print(completing_result.stderr)
     exit(completing_result.returncode)
+
+
 
 
 # Parse the output
