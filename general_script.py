@@ -864,8 +864,8 @@ def generate_atoms_in_unit_cell(parsed_config,space_group_bilbao_cart, lattice_b
     return unit_cell_atoms
 
 
-
-unit_cell_atoms=generate_atoms_in_unit_cell(parsed_config, space_group_bilbao_cart, lattice_basis,origin_cart, repr_s, repr_p, repr_d, repr_f)
+tol=1e-3
+unit_cell_atoms=generate_atoms_in_unit_cell(parsed_config, space_group_bilbao_cart, lattice_basis,origin_cart, repr_s, repr_p, repr_d, repr_f,tol)
 
 # ==============================================================================
 # Define neighbor search parameters
@@ -944,7 +944,7 @@ for i, unit_atom in enumerate(unit_cell_atoms):
 
 identity_idx = find_identity_operation(
     space_group_bilbao_cart,# List of space group operations in Cartesian coordinates
-    tolerance=1e-3, # Numerical tolerance for comparing matrices to identity
+    tolerance=1e-8, # Numerical tolerance for comparing matrices to identity
     verbose=True# Print status message when identity is found
 )
 # print(f"identity_idx={identity_idx}")
@@ -3775,12 +3775,12 @@ roots_from_eq_class=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbo
 roots_grafted_linear=tree_grafting_linear(roots_from_eq_class,
                                           space_group_bilbao_cart,
                                           lattice_basis,
-                                          type_linear)
+                                          type_linear,tol)
 
 roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
                                                 space_group_bilbao_cart,
                                                 lattice_basis,
-                                                type_hermitian
+                                                type_hermitian,tol
                                                 )
 
 
