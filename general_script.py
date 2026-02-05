@@ -4038,10 +4038,10 @@ print("=" * 80)
 # for item in H.free_symbols:
 #     sp.pprint(item)
 # grand_total_matrices = 0
-#
+
 # print(f"{'Atom ID':<20} | {'Atom Type':<10} | {'Matrix Count (Neighbors)':<25}")
 # print("-" * 60)
-#
+
 # for atom in unit_cell_atoms:
     # T_tilde_list is a dictionary:
     # Keys = (center_atom, neighbor_atom) pairs

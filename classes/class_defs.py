@@ -520,7 +520,7 @@ class T_tilde_total():
         """
 
         Args:
-            unit_cell_atoms: unit_cell_atoms: unit_cell_atoms contain constructed T blocks, it is deep-copied to decouple
+            unit_cell_atoms: unit_cell_atoms contain constructed T blocks, it is deep-copied to decouple
         """
         self.unit_cell_atoms = deepcopy(unit_cell_atoms)
         # Flattened dictionary to store all T_tilde_val blocks from all atoms
@@ -530,8 +530,10 @@ class T_tilde_total():
         for atom in self.unit_cell_atoms:
             # Iterate through the T_tilde_val dictionary of the atom
             # atom.T_tilde_val contains the summed k-space hopping matrices
+
             for key, matrix in atom.T_tilde_val.items():
                 # Add the matrix to the flattened dictionary
+
                 self.T_tilde_from_unit_cell_atoms[key] = matrix
 
         self.complete_hermitian_blocks()
@@ -654,6 +656,7 @@ class T_tilde_total():
             wyckoff_id = atom.wyckoff_instance_id
             num_orbitals = atom.num_orbitals
             block_dimensions[wyckoff_id] = num_orbitals
+        # print(f"block_dimensions={block_dimensions}")
         # Step 3: Calculate total Hamiltonian dimension
         self.block_dimensions=block_dimensions
         self.hamiltonian_dimension = sum(block_dimensions.values())
@@ -671,12 +674,12 @@ class T_tilde_total():
                     # Use existing block matrix
                     block = self.T_tilde_from_unit_cell_atoms[key]
                 else:
-                    # Required block is missing - this should not happen
-                    raise KeyError(
-                        f"Missing required block ({to_id}, {from_id}) in T_tilde_from_unit_cell_atoms. "
-                        f"This indicates incomplete hopping data or a bug in complete_hermitian_blocks(). "
-                        f"Available keys: {list(self.T_tilde_from_unit_cell_atoms.keys())}"
-                    )
+                    # Required block is missing - this means the block is 0
+                    n_rows = self.block_dimensions[to_id]
+                    n_cols = self.block_dimensions[from_id]
+                    # Create a zero matrix of the correct size
+                    block = sp.zeros(n_rows, n_cols)
+
                 row_blocks.append(block)
             blocks.append(row_blocks)
 
