@@ -299,6 +299,21 @@ combined_input = {
 # Convert to JSON for subprocess
 combined_input_json = json.dumps(combined_input)
 
+# #run checking space group compatibility
+# compatibility_result= subprocess.run(
+#     ["python3", "./symmetry/check_space_group_compatible.py"],
+#     input=combined_input_json,
+#     capture_output=True,
+#     text=True
+# )
+# # Check ifchecking space group compatibility succeeded
+# if compatibility_result.returncode != 0:
+#     print("Compatibility check failed!")
+#     print(f"Return code: {compatibility_result.returncode}")
+#     print("Error output:")
+#     print(compatibility_result.stderr)
+#     exit(compatibility_result.returncode)
+
 # Run complete_orbitals.py
 completing_result = subprocess.run(
     ["python3", "./symmetry/complete_orbitals.py"],
@@ -314,6 +329,8 @@ if completing_result.returncode != 0:
     print("Error output:")
     print(completing_result.stderr)
     exit(completing_result.returncode)
+
+
 
 
 # Parse the output
@@ -864,8 +881,8 @@ def generate_atoms_in_unit_cell(parsed_config,space_group_bilbao_cart, lattice_b
     return unit_cell_atoms
 
 
-
-unit_cell_atoms=generate_atoms_in_unit_cell(parsed_config, space_group_bilbao_cart, lattice_basis,origin_cart, repr_s, repr_p, repr_d, repr_f)
+tol=1e-3
+unit_cell_atoms=generate_atoms_in_unit_cell(parsed_config, space_group_bilbao_cart, lattice_basis,origin_cart, repr_s, repr_p, repr_d, repr_f,tol)
 
 # ==============================================================================
 # Define neighbor search parameters
@@ -944,7 +961,7 @@ for i, unit_atom in enumerate(unit_cell_atoms):
 
 identity_idx = find_identity_operation(
     space_group_bilbao_cart,# List of space group operations in Cartesian coordinates
-    tolerance=1e-3, # Numerical tolerance for comparing matrices to identity
+    tolerance=1e-8, # Numerical tolerance for comparing matrices to identity
     verbose=True# Print status message when identity is found
 )
 # print(f"identity_idx={identity_idx}")
@@ -3775,12 +3792,12 @@ roots_from_eq_class=generate_all_trees_for_unit_cell(unit_cell_atoms,all_neighbo
 roots_grafted_linear=tree_grafting_linear(roots_from_eq_class,
                                           space_group_bilbao_cart,
                                           lattice_basis,
-                                          type_linear)
+                                          type_linear,tol)
 
 roots_grafted_hermitian=tree_grafting_hermitian(roots_grafted_linear,
                                                 space_group_bilbao_cart,
                                                 lattice_basis,
-                                                type_hermitian
+                                                type_hermitian,tol
                                                 )
 
 
@@ -4021,10 +4038,10 @@ print("=" * 80)
 # for item in H.free_symbols:
 #     sp.pprint(item)
 # grand_total_matrices = 0
-#
+
 # print(f"{'Atom ID':<20} | {'Atom Type':<10} | {'Matrix Count (Neighbors)':<25}")
 # print("-" * 60)
-#
+
 # for atom in unit_cell_atoms:
     # T_tilde_list is a dictionary:
     # Keys = (center_atom, neighbor_atom) pairs
