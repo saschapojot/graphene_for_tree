@@ -1026,7 +1026,7 @@ class T_tilde_total():
             'im_params': im_params_sorted
         }
 
-    def write_to_html(self, filename,dim):
+    def write_to_html(self, filename,dim,precision=3):
         """
         Initialize an HTML file with basic structure and title.
         includes MathJax for future LaTeX rendering.
@@ -1035,7 +1035,11 @@ class T_tilde_total():
         matrix_structure_html = self.get_k_block_structure_html(dim)
         # Get the detailed table structure (Grid form with labels)
         detailed_table_html = self.get_detailed_hamiltonian_table_html()
-        html_content = f"""<!DOCTYPE html>
+
+        # Get the non-zero elements HTML snippet
+        nonzero_elements_html = self.get_nonzero_elements_html(precision)
+
+        html_content = rf"""<!DOCTYPE html>
         <html lang="en">
         <head>
             <meta charset="UTF-8">
@@ -1082,7 +1086,8 @@ class T_tilde_total():
                     <p>The table below maps the matrix indices to specific Atoms and Orbitals. Non-zero elements are denoted by \( h_{{ij}} \).</p>
                     {detailed_table_html}
                 </div>
-
+                <!-- Insert Non-zero Elements -->
+                {nonzero_elements_html}
             </div>
         </body>
         </html>"""
@@ -1244,6 +1249,52 @@ class T_tilde_total():
             html_parts.append('</tr>')
         html_parts.append('</tbody></table></div>')
         return "".join(html_parts)
+
+    def get_nonzero_elements_html(self, precision=3):
+        """
+         Generates an HTML snippet listing all non-zero elements of the Hamiltonian.
+          Each element is formatted as h_{ij} = value using LaTeX.
+        Args:
+            precision:
+
+        Returns:
+
+        """
+        if self.total_hamiltonian is None:
+            raise ValueError("Hamiltonian not constructed")
+        # Simplify, round, and expand the Hamiltonian
+        H = sp.simplify(self.total_hamiltonian)
+        H = self.round_matrix_coefficients(H, precision)
+        H = sp.expand(H)
+        rows, cols = H.shape
+        html_parts = [
+            '<div class="section">',
+            '<h2>Non-zero Hamiltonian Elements</h2>',
+            '<div style="display: flex; flex-direction: column; gap: 15px;">'
+        ]
+        for i in range(rows):
+            for j in range(cols):
+                element = H[i, j]
+                # Check if element is non-zero
+                if element != 0 and element != sp.S.Zero:
+                    # Convert to LaTeX
+                    latex_val = sp.latex(element)
+                    # Fix subscripts (re_... -> Re(...))
+                    latex_val = self._fix_latex_subscripts(latex_val)
+
+                    # Create a styled block for the equation
+                    # Using $$ ... $$ for display math inside the block
+                    block = (
+                        f'<div style="border: 1px solid #eee; padding: 20px; '
+                        f'border-radius: 5px; background: #fafafa; overflow-x: auto;">'
+                        f'$$ h_{{{i}{j}}} = {latex_val} $$'
+                        f'</div>'
+                    )
+                    html_parts.append(block)
+
+        html_parts.append('</div></div>')
+        return "".join(html_parts)
+
 
 
     # def verify_hermiticity(self,tolerence=1e-3):
