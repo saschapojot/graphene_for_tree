@@ -3973,8 +3973,7 @@ out_matrix_file_name=str(config_dir)+"/H.txt"
 T_tilde_tot_obj.write_hamiltonian_to_latex(out_matrix_file_name)
 
 out_html_file_name=str(config_dir)+"/H_html.html"
-T_tilde_tot_obj.write_to_html(out_html_file_name,search_dim)
-print((T_tilde_tot_obj.get_hamiltonian_basis_explanation()))
+T_tilde_tot_obj.write_to_html(out_html_file_name,search_dim,3)
 # ==============================================================================
 # Save Hamiltonian for later use
 # ==============================================================================

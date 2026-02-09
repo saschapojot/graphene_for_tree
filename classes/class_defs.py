@@ -542,6 +542,7 @@ class T_tilde_total():
         self.hamiltonian_dimension = None  # Total dimension of the Hamiltonian
         self.sorted_wyckoff_instance_ids =None
         self.block_dimensions=None
+        self.system_name=self.unit_cell_atoms[0].parsed_config["name"]
 
     def complete_hermitian_blocks(self):
         """
@@ -1075,7 +1076,7 @@ class T_tilde_total():
         </head>
         <body>
             <div class="container">
-                <h1>Hamiltonian block in k space</h1>
+                <h1>Hamiltonian block in k space, {self.system_name}</h1>
                 <p>Generated on: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
 
                 <!-- Insert General Matrix Structure -->
@@ -1275,6 +1276,9 @@ class T_tilde_total():
         for i in range(rows):
             for j in range(cols):
                 element = H[i, j]
+                if i==j:
+                    element=sp.expand_complex(element)
+                    element=sp.simplify(element)
                 # Check if element is non-zero
                 if element != 0 and element != sp.S.Zero:
                     # Convert to LaTeX
