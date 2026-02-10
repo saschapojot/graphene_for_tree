@@ -23,7 +23,7 @@ argErrCode = 20
 save_err_code=30
 if (len(sys.argv) != 2):
     print("wrong number of arguments")
-    print("example: python preprocessing.py /path/to/mc.conf")
+    print("example: python preprocessing.py /path/to/xxx.conf")
     exit(argErrCode)
 
 
