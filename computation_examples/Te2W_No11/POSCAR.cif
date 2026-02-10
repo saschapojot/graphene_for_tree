@@ -1,0 +1,30 @@
+data_POSCAR
+_audit_creation_date              2026-02-10
+_audit_creation_method            'Materials Studio'
+_symmetry_space_group_name_H-M    'P21/M'
+_symmetry_Int_Tables_number       11
+_symmetry_cell_setting            monoclinic
+loop_
+_symmetry_equiv_pos_as_xyz
+  x,y,z
+  -x,y+1/2,-z
+  -x,-y,-z
+  x,-y+1/2,z
+_cell_length_a                    15.0058
+_cell_length_b                    3.5186
+_cell_length_c                    6.3023
+_cell_angle_alpha                 90.0000
+_cell_angle_beta                  90.0000
+_cell_angle_gamma                 90.0000
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_U_iso_or_equiv
+_atom_site_adp_type
+_atom_site_occupancy
+W1     W    -0.00719   0.75000   0.17781   0.00000  Uiso   1.00
+Te1    Te   -0.09729   0.75000   0.57392   0.00000  Uiso   1.00
+Te4    Te    0.13832   0.75000   0.91976   0.00000  Uiso   1.00
